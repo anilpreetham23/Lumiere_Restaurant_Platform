@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import StatusSelect from "@/components/StatusSelect";
 import { setReservationStatus, setOrderStatus } from "@/actions/admin";
 import { money } from "@/data/menu";
+import { getActiveRestaurant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,13 @@ function fmt(d: string) {
 
 export default async function AdminDashboard() {
   const supabase = await createClient();
+  const active = await getActiveRestaurant();
+  if (!active) return null;
   const [resv, msgs, subs, orders] = await Promise.all([
-    supabase.from("reservations").select("*").order("created_at", { ascending: false }),
-    supabase.from("messages").select("*").order("created_at", { ascending: false }),
+    supabase.from("reservations").select("*").eq("restaurant_id", active.restaurant_id).order("created_at", { ascending: false }),
+    supabase.from("messages").select("*").eq("restaurant_id", active.restaurant_id).order("created_at", { ascending: false }),
     supabase.from("subscribers").select("*").order("created_at", { ascending: false }),
-    supabase.from("orders").select("*").order("created_at", { ascending: false }),
+    supabase.from("orders").select("*").eq("restaurant_id", active.restaurant_id).order("created_at", { ascending: false }),
   ]);
 
   const reservations = resv.data ?? [];

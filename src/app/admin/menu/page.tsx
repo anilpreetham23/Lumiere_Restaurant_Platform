@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   setMenuAvailability, setMenuPrice, addMenuItem, deleteMenuItem,
 } from "@/actions/admin";
+import { getActiveRestaurantId } from "@/actions/tenant";
 import type { MenuItem } from "@/lib/order";
 
 const CUISINES = ["France", "Italy", "Japan", "India", "Spain", "Patisserie"];
@@ -19,7 +20,9 @@ export default function MenuAdminPage() {
   const [err, setErr] = useState<string | null>(null);
 
   async function load() {
-    const { data } = await supabase.from("menu_items").select("*").order("sort");
+    const restaurantId = await getActiveRestaurantId();
+    if (!restaurantId) { setItems([]); return; }
+    const { data } = await supabase.from("menu_items").select("*").eq("restaurant_id", restaurantId).order("sort");
     setItems((data ?? []) as MenuItem[]);
   }
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);

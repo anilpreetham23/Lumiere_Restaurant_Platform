@@ -58,6 +58,7 @@ export type DiningSession = {
 export type TableInfo = { id: string; label: string; seats: number; state: string };
 
 export type SessionSnapshot = {
+  restaurant_id?: string;
   table: TableInfo;
   session: DiningSession | null;
   orders: SessionOrder[];

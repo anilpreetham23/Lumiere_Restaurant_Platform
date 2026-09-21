@@ -5,6 +5,7 @@ import { BellRing, GlassWater, ReceiptText, Check, RefreshCw } from "lucide-reac
 import { createClient } from "@/lib/supabase/client";
 import { money } from "@/data/menu";
 import { setSessionOrderStatus, resolveServiceRequest } from "@/actions/admin";
+import { getActiveRestaurantId } from "@/actions/tenant";
 import type { SessionOrder, OrderLine } from "@/lib/order";
 
 type TableRow = { id: string; label: string };
@@ -34,11 +35,13 @@ export default function KitchenPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    const restaurantId = await getActiveRestaurantId();
+    if (!restaurantId) { setOrders([]); setSessions([]); setTables([]); setReqs([]); return; }
     const [o, s, t, r] = await Promise.all([
-      supabase.from("session_orders").select("*").neq("status", "served").order("created_at"),
-      supabase.from("dining_sessions").select("id,table_id").in("status", ["open", "bill_pending"]),
-      supabase.from("restaurant_tables").select("id,label"),
-      supabase.from("service_requests").select("*").neq("status", "done").order("created_at"),
+      supabase.from("session_orders").select("*").eq("restaurant_id", restaurantId).neq("status", "served").order("created_at"),
+      supabase.from("dining_sessions").select("id,table_id").eq("restaurant_id", restaurantId).in("status", ["open", "bill_pending"]),
+      supabase.from("restaurant_tables").select("id,label").eq("restaurant_id", restaurantId),
+      supabase.from("service_requests").select("*").eq("restaurant_id", restaurantId).neq("status", "done").order("created_at"),
     ]);
     setOrders((o.data ?? []) as SessionOrder[]);
     setSessions((s.data ?? []) as SessionRow[]);

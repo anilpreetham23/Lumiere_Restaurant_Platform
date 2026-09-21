@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import AdminLogout from "@/components/AdminLogout";
+import { getActiveRestaurant, getRestaurantMemberships } from "@/lib/tenant";
+import { switchActiveRestaurant } from "@/actions/tenant";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -14,6 +16,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return <>{children}</>;
   }
 
+  const [active, memberships] = await Promise.all([getActiveRestaurant(), getRestaurantMemberships()]);
+  if (!active) {
+    return <div className="min-h-screen grid place-items-center bg-cream px-5 text-center"><div><h1 className="font-serif text-2xl">No restaurant access</h1><p className="text-sm text-neutral-500 mt-2">Ask a platform administrator to add your restaurant membership.</p></div></div>;
+  }
+
   return (
     <div className="min-h-screen bg-cream">
       <header className="bg-white border-b border-cream2">
@@ -23,6 +30,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             Lumiere Console
           </Link>
           <div className="flex items-center gap-4">
+            {memberships.length > 1 && (
+              <form action={switchActiveRestaurant}>
+                <label className="sr-only" htmlFor="restaurant-context">Active restaurant</label>
+                <select id="restaurant-context" name="restaurant_id" defaultValue={active.restaurant_id} className="field py-1.5 text-xs">
+                  {memberships.map((membership) => <option key={membership.restaurant_id} value={membership.restaurant_id}>{membership.restaurant.name}</option>)}
+                </select>
+              </form>
+            )}
             <Link href="/admin" className="text-sm text-neutral-600 hover:text-wine">Dashboard</Link>
             <Link href="/admin/kitchen" className="text-sm text-neutral-600 hover:text-wine">Kitchen</Link>
             <Link href="/admin/floor" className="text-sm text-neutral-600 hover:text-wine">Floor</Link>

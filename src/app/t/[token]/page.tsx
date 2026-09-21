@@ -26,7 +26,7 @@ export default async function TablePage({
 
   const [{ data: snap }, { data: menu }] = await Promise.all([
     supabase.rpc("get_session", { p_token: token }),
-    supabase.from("menu_items").select("*").order("sort"),
+    supabase.rpc("get_menu_for_table", { p_token: token }),
   ]);
 
   const snapshot = snap as SessionSnapshot;

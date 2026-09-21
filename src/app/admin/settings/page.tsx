@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { updateSettings } from "@/actions/admin";
+import { getActiveRestaurantId } from "@/actions/tenant";
 
 type Settings = {
   restaurant_name: string; tagline: string; phone: string; email: string;
@@ -32,9 +33,12 @@ export default function SettingsPage() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    supabase.from("app_settings").select("*").eq("id", 1).single().then(({ data, error }) => {
-      if (error) setErr("Run the app_settings SQL in Supabase first.");
+    getActiveRestaurantId().then((restaurantId) => {
+      if (!restaurantId) { setErr("No active restaurant selected."); return; }
+      supabase.from("restaurant_settings").select("*").eq("restaurant_id", restaurantId).single().then(({ data, error }) => {
+      if (error) setErr("Run the restaurant_settings SQL in Supabase first.");
       else setS(data as Settings);
+      });
     });
   }, [supabase]);
 

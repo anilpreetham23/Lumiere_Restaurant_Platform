@@ -31,7 +31,7 @@ async function settle(token: string, ref: string, method: string): Promise<{ ok:
   if (!serviceRoleConfigured()) return { ok: false, error: "Server not configured (service role key)." };
   const admin = createAdminClient();
 
-  const { data: table } = await admin.from("restaurant_tables").select("id,label").eq("token", token).single();
+  const { data: table } = await admin.from("restaurant_tables").select("id,label,restaurant_id").eq("token", token).single();
   if (!table) return { ok: false, error: "Table not found." };
 
   const { data: sess } = await admin.from("dining_sessions").select("*")
@@ -53,6 +53,7 @@ async function settle(token: string, ref: string, method: string): Promise<{ ok:
   }).eq("id", sess.id);
   await admin.from("restaurant_tables").update({ state: "free", current_session_id: null }).eq("id", table.id);
   await admin.from("payments").insert({
+    restaurant_id: table.restaurant_id,
     session_id: sess.id, amount, currency: "inr",
     provider: method === "online" ? GATEWAY() : method,
     stripe_payment_intent: ref, status: "paid", receipt_code: code,
@@ -77,7 +78,7 @@ export async function startBillPayment(token: string, tip = 0): Promise<StartRes
   if (!serviceRoleConfigured()) return { ok: false, error: "Server not configured (service role key)." };
   const admin = createAdminClient();
 
-  const { data: table } = await admin.from("restaurant_tables").select("id,label").eq("token", token).single();
+  const { data: table } = await admin.from("restaurant_tables").select("id,label,restaurant_id").eq("token", token).single();
   if (!table) return { ok: false, error: "Table not found." };
 
   const { data: sess } = await admin.from("dining_sessions").select("id,status,payment_status")
@@ -100,6 +101,7 @@ export async function startBillPayment(token: string, tip = 0): Promise<StartRes
     if (!keyId || !keySecret) return { ok: false, error: "Online payment is not set up yet." };
 
     const { data: intent, error: intentErr } = await admin.from("payment_intents").insert({
+      restaurant_id: table.restaurant_id,
       purpose: "dine_in_bill",
       session_id: sess.id,
       table_token: token,
@@ -161,6 +163,7 @@ export async function startBillPayment(token: string, tip = 0): Promise<StartRes
   if (!stripeConfigured()) return { ok: false, error: "Online payment is not set up yet." };
 
   const { data: intent, error: intentErr } = await admin.from("payment_intents").insert({
+    restaurant_id: table.restaurant_id,
     purpose: "dine_in_bill",
     session_id: sess.id,
     table_token: token,
@@ -390,6 +393,7 @@ export async function startReservationDeposit(rid: string): Promise<StartResult>
     if (!keyId || !keySecret) return { ok: false, error: "Online payment is not set up yet." };
 
     const { data: intent, error: intentErr } = await admin.from("payment_intents").insert({
+      restaurant_id: r.restaurant_id,
       purpose: "reservation_deposit",
       reservation_id: rid,
       expected_amount: depositAmount,
@@ -449,6 +453,7 @@ export async function startReservationDeposit(rid: string): Promise<StartResult>
   if (!stripeConfigured()) return { ok: false, error: "Online payment is not set up yet." };
 
   const { data: intent, error: intentErr } = await admin.from("payment_intents").insert({
+    restaurant_id: r.restaurant_id,
     purpose: "reservation_deposit",
     reservation_id: rid,
     expected_amount: depositAmount,

@@ -181,7 +181,7 @@ export default function TableOrder({
 
   // Aggregate dish ratings for "Trending tonight" badges.
   useEffect(() => {
-    supabase.from("dish_ratings").select("menu_item_id,rating").then(({ data }) => {
+    supabase.rpc("get_dish_ratings_for_table", { p_token: token }).then(({ data }) => {
       const agg: Record<string, { sum: number; n: number }> = {};
       (data ?? []).forEach((r: { menu_item_id: string; rating: number }) => {
         const a = agg[r.menu_item_id] ?? { sum: 0, n: 0 };
@@ -203,8 +203,8 @@ export default function TableOrder({
       const a = r[menuItemId] ?? { sum: 0, n: 0 };
       return { ...r, [menuItemId]: { sum: a.sum + stars, n: a.n + 1 } };
     });
-    await supabase.from("dish_ratings").insert({
-      menu_item_id: menuItemId, rating: stars, session_id: snap?.session?.id ?? null,
+    await supabase.rpc("rate_dish_for_table", {
+      p_token: token, p_menu_item_id: menuItemId, p_rating: stars,
     });
     setToast("Thanks for rating");
   }
@@ -248,7 +248,9 @@ export default function TableOrder({
     setToast("Order sent to the kitchen");
     // Loyalty: recognise returning guests by phone.
     if (phone && !welcome) {
-      const { data: c } = await supabase.rpc("touch_customer", { p_phone: phone, p_name: name || null });
+      const { data: c } = await supabase.rpc("touch_customer_for_table", {
+        p_token: token, p_phone: phone, p_name: name || null,
+      });
       const d = c as { visits: number; name: string | null } | null;
       if (d) setWelcome(
         d.visits > 1

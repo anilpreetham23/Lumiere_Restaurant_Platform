@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { money } from "@/data/menu";
 import { setTableState, settleSession } from "@/actions/admin";
+import { getActiveRestaurantId } from "@/actions/tenant";
 
 type TableRow = { id: string; label: string; seats: number; state: string; current_session_id: string | null };
 type SessionRow = { id: string; table_id: string; status: string };
@@ -25,10 +26,12 @@ export default function FloorPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    const restaurantId = await getActiveRestaurantId();
+    if (!restaurantId) { setTables([]); setSessions([]); setOrders([]); return; }
     const [t, s, o] = await Promise.all([
-      supabase.from("restaurant_tables").select("id,label,seats,state,current_session_id").order("created_at"),
-      supabase.from("dining_sessions").select("id,table_id,status").in("status", ["open", "bill_pending"]),
-      supabase.from("session_orders").select("session_id,amount").neq("status", "served"),
+      supabase.from("restaurant_tables").select("id,label,seats,state,current_session_id").eq("restaurant_id", restaurantId).order("created_at"),
+      supabase.from("dining_sessions").select("id,table_id,status").eq("restaurant_id", restaurantId).in("status", ["open", "bill_pending"]),
+      supabase.from("session_orders").select("session_id,amount").eq("restaurant_id", restaurantId).neq("status", "served"),
     ]);
     setTables((t.data ?? []) as TableRow[]);
     setSessions((s.data ?? []) as SessionRow[]);

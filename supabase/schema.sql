@@ -7,6 +7,66 @@
 create extension if not exists "pgcrypto";
 
 -- ============================================================
+-- 0. TENANTS, MEMBERSHIPS & BRANDING
+-- ============================================================
+
+create table if not exists public.restaurants (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  slug text not null unique,
+  logo text,
+  status text not null default 'active' check (status in ('active', 'suspended', 'archived')),
+  phone text,
+  email text,
+  address text,
+  city text,
+  state text,
+  country text,
+  postal_code text,
+  latitude numeric(9,6),
+  longitude numeric(9,6),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.restaurant_memberships (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null default 'staff' check (role in ('owner', 'manager', 'staff')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (restaurant_id, user_id)
+);
+
+create index if not exists idx_restaurant_memberships_user on public.restaurant_memberships(user_id);
+create index if not exists idx_restaurant_memberships_restaurant on public.restaurant_memberships(restaurant_id);
+
+create table if not exists public.restaurant_branding (
+  restaurant_id uuid primary key references public.restaurants(id) on delete cascade,
+  primary_color text not null default '#7a2e35',
+  secondary_color text not null default '#16130f',
+  accent_color text not null default '#c9a45c',
+  background_color text not null default '#f6f0e7',
+  assets jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.restaurants (name, slug, status)
+values ('Lumière', 'lumiere', 'active')
+on conflict (slug) do nothing;
+
+insert into public.restaurant_branding (restaurant_id)
+select id from public.restaurants where slug = 'lumiere'
+on conflict (restaurant_id) do nothing;
+
+create or replace function public.default_restaurant_id()
+returns uuid language sql stable security definer set search_path = public as $$
+  select id from public.restaurants where slug = 'lumiere' limit 1;
+$$;
+
+-- ============================================================
 -- 1. EXISTING PUBLIC-FORM TABLES
 -- ============================================================
 
@@ -83,15 +143,44 @@ create table if not exists public.app_settings (
   accepting_orders boolean not null default true
 );
 
+create table if not exists public.restaurant_settings (
+  restaurant_id uuid primary key references public.restaurants(id) on delete cascade,
+  restaurant_name text not null default 'Lumière',
+  tagline text not null default 'International Fine Dining',
+  phone text not null default '',
+  email text not null default '',
+  address text not null default '',
+  hours text not null default '',
+  currency text not null default '₹',
+  deposit_amount numeric(10,2) not null default 500,
+  service_charge_pct numeric(5,2) not null default 0,
+  payment_gateway text not null default 'razorpay',
+  accepting_orders boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.restaurant_settings (
+  restaurant_id, restaurant_name, tagline, phone, email, address, hours, currency,
+  deposit_amount, service_charge_pct, payment_gateway, accepting_orders
+)
+select r.id, a.restaurant_name, a.tagline, a.phone, a.email, a.address, a.hours, a.currency,
+  a.deposit_amount, a.service_charge_pct, a.payment_gateway, a.accepting_orders
+from public.restaurants r
+cross join public.app_settings a
+where r.slug = 'lumiere'
+on conflict (restaurant_id) do nothing;
+
 -- Guest dish ratings + loyalty (returning-guests).
 create table if not exists public.customers (
   id uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
-  phone text not null unique,
+  phone text not null,
   name text,
   visits int not null default 0,
   last_visit_at timestamptz
 );
+alter table public.customers drop constraint if exists customers_phone_key;
 
 -- ============================================================
 -- 2. MENU (moved out of static menu.ts → DB-editable, sold-out toggle)
@@ -274,6 +363,40 @@ create table if not exists public.payment_refunds (
 --    the SECURITY DEFINER rpc functions in section 9. Only authenticated
 --    staff get direct table access. Public forms keep anon INSERT.
 -- ============================================================
+
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'reservations','messages','orders','menu_items','restaurant_tables',
+    'dining_sessions','dish_ratings','session_orders','service_requests',
+    'payment_intents','payments','payment_refunds','customers'
+  ] loop
+    execute format('alter table public.%1$s add column if not exists restaurant_id uuid references public.restaurants(id) default public.default_restaurant_id();', t);
+    execute format('update public.%1$s set restaurant_id = public.default_restaurant_id() where restaurant_id is null;', t);
+    execute format('alter table public.%1$s alter column restaurant_id set not null;', t);
+    execute format('create index if not exists idx_%1$s_restaurant on public.%1$s(restaurant_id);', t);
+  end loop;
+end $$;
+
+create unique index if not exists uq_customers_restaurant_phone on public.customers(restaurant_id, phone);
+
+create or replace function public.is_restaurant_member(p_restaurant_id uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.restaurant_memberships
+    where restaurant_id = p_restaurant_id and user_id = auth.uid()
+  );
+$$;
+
+create or replace function public.has_restaurant_role(p_restaurant_id uuid, p_roles text[])
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.restaurant_memberships
+    where restaurant_id = p_restaurant_id and user_id = auth.uid() and role = any(p_roles)
+  );
+$$;
+
 alter table public.reservations       enable row level security;
 alter table public.messages           enable row level security;
 alter table public.subscribers        enable row level security;
@@ -290,43 +413,80 @@ alter table public.payment_refunds    enable row level security;
 alter table public.app_settings       enable row level security;
 alter table public.customers          enable row level security;
 alter table public.dish_ratings       enable row level security;
+alter table public.restaurants         enable row level security;
+alter table public.restaurant_memberships enable row level security;
+alter table public.restaurant_branding enable row level security;
+alter table public.restaurant_settings enable row level security;
 
 -- public forms: anon may INSERT
 drop policy if exists "public insert reservations" on public.reservations;
 drop policy if exists "public insert messages"     on public.messages;
 drop policy if exists "public insert subscribers"  on public.subscribers;
 drop policy if exists "public insert orders"       on public.orders;
-create policy "public insert reservations" on public.reservations for insert to anon, authenticated with check (true);
-create policy "public insert messages"     on public.messages     for insert to anon, authenticated with check (true);
+create policy "public insert reservations" on public.reservations for insert to anon, authenticated with check (restaurant_id = public.default_restaurant_id());
+create policy "public insert messages"     on public.messages     for insert to anon, authenticated with check (restaurant_id = public.default_restaurant_id());
 create policy "public insert subscribers"  on public.subscribers  for insert to anon, authenticated with check (true);
-create policy "public insert orders"       on public.orders       for insert to anon, authenticated with check (true);
+create policy "public insert orders"       on public.orders       for insert to anon, authenticated with check (restaurant_id = public.default_restaurant_id());
 
 -- dish ratings: anyone may rate + read aggregate (trending badges)
 drop policy if exists "public insert dish_ratings" on public.dish_ratings;
 drop policy if exists "public read dish_ratings"   on public.dish_ratings;
-create policy "public insert dish_ratings" on public.dish_ratings for insert to anon, authenticated with check (true);
-create policy "public read dish_ratings"   on public.dish_ratings for select to anon, authenticated using (true);
+create policy "public read dish_ratings"   on public.dish_ratings for select to anon, authenticated using (restaurant_id = public.default_restaurant_id() or public.is_restaurant_member(restaurant_id));
 
 -- menu: anyone may READ (needed to render the public menu); only staff may write
 drop policy if exists "public read menu" on public.menu_items;
+drop policy if exists "public read default menu" on public.menu_items;
 drop policy if exists "staff write menu" on public.menu_items;
-create policy "public read menu" on public.menu_items for select to anon, authenticated using (true);
-create policy "staff write menu" on public.menu_items for all to authenticated using (true) with check (true);
+create policy "public read menu" on public.menu_items for select to anon, authenticated
+  using (restaurant_id = public.default_restaurant_id() or public.is_restaurant_member(restaurant_id));
+create policy "member write menu" on public.menu_items for all to authenticated
+  using (public.has_restaurant_role(restaurant_id, array['owner','manager']))
+  with check (public.has_restaurant_role(restaurant_id, array['owner','manager']));
+
+create policy "member read restaurants" on public.restaurants for select to authenticated
+  using (public.is_restaurant_member(id));
+create policy "member read memberships" on public.restaurant_memberships for select to authenticated
+  using (user_id = auth.uid() or public.has_restaurant_role(restaurant_id, array['owner','manager']));
+create policy "owner manage memberships" on public.restaurant_memberships for all to authenticated
+  using (public.has_restaurant_role(restaurant_id, array['owner']))
+  with check (public.has_restaurant_role(restaurant_id, array['owner']));
+create policy "member read branding" on public.restaurant_branding for select to authenticated
+  using (public.is_restaurant_member(restaurant_id));
+create policy "member manage branding" on public.restaurant_branding for all to authenticated
+  using (public.has_restaurant_role(restaurant_id, array['owner','manager']))
+  with check (public.has_restaurant_role(restaurant_id, array['owner','manager']));
+create policy "member read restaurant settings" on public.restaurant_settings for select to authenticated
+  using (public.is_restaurant_member(restaurant_id));
+create policy "member manage restaurant settings" on public.restaurant_settings for all to authenticated
+  using (public.has_restaurant_role(restaurant_id, array['owner','manager']))
+  with check (public.has_restaurant_role(restaurant_id, array['owner','manager']));
 
 -- staff (authenticated) full access to operational tables
 do $$
 declare t text;
 begin
   foreach t in array array[
-    'reservations','messages','subscribers','orders',
+    'reservations','messages','orders',
     'restaurant_tables','dining_sessions','session_orders',
     'service_requests','payments','payment_intents',
-    'webhook_events','payment_refunds','app_settings','customers'
+    'payment_refunds','customers'
   ] loop
     execute format('drop policy if exists "staff all %1$s" on public.%1$s;', t);
-    execute format('create policy "staff all %1$s" on public.%1$s for all to authenticated using (true) with check (true);', t);
+    execute format('drop policy if exists "member all %1$s" on public.%1$s;', t);
+    execute format('create policy "member all %1$s" on public.%1$s for all to authenticated using (public.is_restaurant_member(restaurant_id)) with check (public.is_restaurant_member(restaurant_id));', t);
   end loop;
 end $$;
+
+drop policy if exists "staff read subscribers" on public.subscribers;
+create policy "authenticated read subscribers" on public.subscribers for select to authenticated using (true);
+-- Webhook events are platform audit data and are intentionally service-role only.
+drop policy if exists "staff all webhook_events" on public.webhook_events;
+drop policy if exists "member all webhook_events" on public.webhook_events;
+
+drop policy if exists "staff all app_settings" on public.app_settings;
+create policy "member all app_settings" on public.app_settings for all to authenticated
+  using (public.is_restaurant_member(public.default_restaurant_id()))
+  with check (public.is_restaurant_member(public.default_restaurant_id()));
 
 -- ============================================================
 -- 9. SECURE RPCs  (anonymous customer surface — price-safe)
@@ -352,19 +512,32 @@ begin
     where table_id = v_table.id and status in ('open','bill_pending')
     order by created_at desc limit 1;
   if not found then
-    return jsonb_build_object('table', to_jsonb(v_table) - 'token', 'session', null, 'orders', '[]'::jsonb);
+    return jsonb_build_object('restaurant_id', v_table.restaurant_id, 'table', to_jsonb(v_table) - 'token', 'session', null, 'orders', '[]'::jsonb);
   end if;
   select coalesce(jsonb_agg(to_jsonb(o) order by o.created_at), '[]'::jsonb) into v_orders
     from session_orders o where o.session_id = v_sess.id;
   select coalesce(jsonb_agg(to_jsonb(r) order by r.created_at), '[]'::jsonb) into v_reqs
     from service_requests r where r.session_id = v_sess.id and r.status <> 'done';
   return jsonb_build_object(
+    'restaurant_id', v_table.restaurant_id,
     'table', to_jsonb(v_table) - 'token',
     'session', to_jsonb(v_sess),
     'orders', v_orders,
     'requests', v_reqs
   );
 end $$;
+
+create or replace function public.get_menu_for_table(p_token uuid)
+returns setof public.menu_items
+language sql security definer set search_path = public as $$
+  select m.*
+  from public.menu_items m
+  where exists (
+    select 1 from public.restaurant_tables t
+    where t.token = p_token and t.restaurant_id = m.restaurant_id
+  )
+  order by m.sort;
+$$;
 
 -- place an order (opens a session on first order). Prices are re-read from
 -- menu_items — the client's prices are ignored, so totals cannot be forged.
@@ -388,14 +561,15 @@ begin
     where table_id = v_table.id and status in ('open','bill_pending')
     order by created_at desc limit 1;
   if not found then
-    insert into dining_sessions(table_id, customer_name, phone)
-      values (v_table.id, p_customer, p_phone) returning * into v_sess;
+    insert into dining_sessions(restaurant_id, table_id, customer_name, phone)
+      values (v_table.restaurant_id, v_table.id, p_customer, p_phone) returning * into v_sess;
     update restaurant_tables set state='occupied', current_session_id=v_sess.id where id=v_table.id;
   end if;
 
   -- build the line items from trusted DB prices
   for v_item in select * from jsonb_array_elements(p_items) loop
-    select * into v_mi from menu_items where id = (v_item->>'menu_item_id');
+    select * into v_mi from menu_items
+      where id = (v_item->>'menu_item_id') and restaurant_id = v_table.restaurant_id;
     if not found then raise exception 'unknown item %', v_item->>'menu_item_id'; end if;
     if not v_mi.available then raise exception '% is sold out', v_mi.title; end if;
     v_qty := greatest(1, coalesce((v_item->>'qty')::int, 1));
@@ -407,8 +581,8 @@ begin
     v_lines := v_lines || v_line;
   end loop;
 
-  insert into session_orders(session_id, items, amount, notes)
-    values (v_sess.id, v_lines, v_amount, p_notes);
+  insert into session_orders(restaurant_id, session_id, items, amount, notes)
+  values (v_table.restaurant_id, v_sess.id, v_lines, v_amount, p_notes);
 
   return get_session(p_token);
 end $$;
@@ -425,8 +599,8 @@ begin
   select * into v_sess from dining_sessions
     where table_id=v_table.id and status in ('open','bill_pending')
     order by created_at desc limit 1;
-  insert into service_requests(table_id, session_id, type)
-    values (v_table.id, v_sess.id, p_type);
+  insert into service_requests(restaurant_id, table_id, session_id, type)
+    values (v_table.restaurant_id, v_table.id, v_sess.id, p_type);
   if p_type = 'bill' and found then
     update dining_sessions set status='bill_pending' where id=v_sess.id;
     update restaurant_tables set state='bill_pending' where id=v_table.id;
@@ -484,8 +658,16 @@ begin
   -- 4. Execute settlement based on purpose (authoritative provider taken from v_intent)
   if v_intent.purpose = 'dine_in_bill' then
     -- Lock table & session rows
-    select * into v_sess from dining_sessions where id = v_intent.session_id for update;
-    select * into v_table from restaurant_tables where id = v_sess.table_id for update;
+    select * into v_sess from dining_sessions
+      where id = v_intent.session_id and restaurant_id = v_intent.restaurant_id for update;
+    if not found then
+      return jsonb_build_object('ok', false, 'error', 'Payment session tenant mismatch');
+    end if;
+    select * into v_table from restaurant_tables
+      where id = v_sess.table_id and restaurant_id = v_intent.restaurant_id for update;
+    if not found then
+      return jsonb_build_object('ok', false, 'error', 'Payment table tenant mismatch');
+    end if;
 
     -- Update session and table
     update dining_sessions set
@@ -497,26 +679,30 @@ begin
 
     -- Log payment using authoritative intent provider
     insert into payments (
-      intent_id, session_id, provider, provider_order_id, provider_payment_id,
+      restaurant_id, intent_id, session_id, provider, provider_order_id, provider_payment_id,
       stripe_payment_intent, amount, paid_amount, currency, payment_method_type, status, receipt_code
     ) values (
-      v_intent.id, v_sess.id, v_intent.provider, v_intent.provider_order_id, p_provider_payment_id,
+      v_intent.restaurant_id, v_intent.id, v_sess.id, v_intent.provider, v_intent.provider_order_id, p_provider_payment_id,
       p_provider_payment_id, p_paid_amount, p_paid_amount, v_intent.currency, p_payment_method_type, 'paid', v_code
     ) returning id into v_payment_id;
 
   elsif v_intent.purpose = 'reservation_deposit' then
     -- Lock reservation row
-    select * into v_res from reservations where id = v_intent.reservation_id for update;
+    select * into v_res from reservations
+      where id = v_intent.reservation_id and restaurant_id = v_intent.restaurant_id for update;
+    if not found then
+      return jsonb_build_object('ok', false, 'error', 'Payment reservation tenant mismatch');
+    end if;
 
     update reservations set
       deposit_status = 'paid', status = 'confirmed'
     where id = v_res.id;
 
     insert into payments (
-      intent_id, reservation_id, provider, provider_order_id, provider_payment_id,
+      restaurant_id, intent_id, reservation_id, provider, provider_order_id, provider_payment_id,
       stripe_payment_intent, amount, paid_amount, currency, payment_method_type, status, receipt_code
     ) values (
-      v_intent.id, v_res.id, v_intent.provider, v_intent.provider_order_id, p_provider_payment_id,
+      v_intent.restaurant_id, v_intent.id, v_res.id, v_intent.provider, v_intent.provider_order_id, p_provider_payment_id,
       p_provider_payment_id, p_paid_amount, p_paid_amount, v_intent.currency, p_payment_method_type, 'paid', v_code
     ) returning id into v_payment_id;
   end if;
@@ -534,33 +720,70 @@ end $$;
 -- lock down + expose the rpcs
 revoke all on function public.resolve_table(uuid) from public;
 revoke all on function public.get_session(uuid) from public;
+revoke all on function public.get_menu_for_table(uuid) from public;
 revoke all on function public.place_order(uuid,jsonb,text,text,text) from public;
 revoke all on function public.call_service(uuid,text) from public;
 revoke all on function public.settle_payment_intent_atomic(uuid,text,numeric,text,text,text) from public, anon, authenticated;
 grant execute on function public.resolve_table(uuid) to anon, authenticated;
 grant execute on function public.get_session(uuid) to anon, authenticated;
+grant execute on function public.get_menu_for_table(uuid) to anon, authenticated;
 grant execute on function public.place_order(uuid,jsonb,text,text,text) to anon, authenticated;
 grant execute on function public.call_service(uuid,text) to anon, authenticated;
 grant execute on function public.settle_payment_intent_atomic(uuid,text,numeric,text,text,text) to service_role;
 
--- loyalty: register a visit for a returning guest (anon-safe, price-safe)
-create or replace function public.touch_customer(p_phone text, p_name text default null)
+-- QR-scoped loyalty: the table token determines the restaurant.
+create or replace function public.touch_customer_for_table(p_token uuid, p_phone text, p_name text default null)
 returns table(visits int, name text)
 language plpgsql security definer set search_path = public as $$
-declare v_cust customers;
+declare v_cust customers; v_restaurant_id uuid;
 begin
+  select restaurant_id into v_restaurant_id from restaurant_tables where token = p_token;
+  if v_restaurant_id is null then return; end if;
   if p_phone is null or p_phone = '' then return; end if;
-  select * into v_cust from customers where phone = p_phone;
+  select * into v_cust from customers where phone = p_phone and restaurant_id = v_restaurant_id;
   if not found then
-    insert into customers(phone, name, visits, last_visit_at) values (p_phone, p_name, 1, now());
+    insert into customers(restaurant_id, phone, name, visits, last_visit_at)
+      values (v_restaurant_id, p_phone, p_name, 1, now());
     return query select 1::int as visits, p_name::text as name;
   else
-    update customers set visits = visits + 1, last_visit_at = now(), name = coalesce(p_name, name) where phone = p_phone;
+    update customers set visits = visits + 1, last_visit_at = now(), name = coalesce(p_name, name)
+      where id = v_cust.id;
     return query select (v_cust.visits + 1)::int as visits, coalesce(v_cust.name, p_name)::text as name;
   end if;
 end $$;
 revoke all on function public.touch_customer(text,text) from public;
-grant execute on function public.touch_customer(text,text) to anon, authenticated;
+revoke all on function public.touch_customer_for_table(uuid,text,text) from public;
+grant execute on function public.touch_customer_for_table(uuid,text,text) to anon, authenticated;
+
+create or replace function public.rate_dish_for_table(p_token uuid, p_menu_item_id text, p_rating int)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare v_restaurant_id uuid;
+begin
+  if p_rating < 1 or p_rating > 5 then raise exception 'invalid rating'; end if;
+  select restaurant_id into v_restaurant_id from restaurant_tables where token = p_token;
+  if v_restaurant_id is null then raise exception 'invalid table'; end if;
+  if not exists (select 1 from menu_items where id = p_menu_item_id and restaurant_id = v_restaurant_id) then
+    raise exception 'unknown menu item';
+  end if;
+  insert into dish_ratings(restaurant_id, menu_item_id, rating)
+    values (v_restaurant_id, p_menu_item_id, p_rating);
+end $$;
+
+create or replace function public.get_dish_ratings_for_table(p_token uuid)
+returns table(menu_item_id text, rating int)
+language sql security definer set search_path = public as $$
+  select r.menu_item_id, r.rating
+  from dish_ratings r
+  where exists (
+    select 1 from restaurant_tables t
+    where t.token = p_token and t.restaurant_id = r.restaurant_id
+  );
+$$;
+revoke all on function public.rate_dish_for_table(uuid,text,int) from public;
+revoke all on function public.get_dish_ratings_for_table(uuid) from public;
+grant execute on function public.rate_dish_for_table(uuid,text,int) to anon, authenticated;
+grant execute on function public.get_dish_ratings_for_table(uuid) to anon, authenticated;
 
 -- ============================================================
 -- 10. REALTIME  (staff Kitchen Display subscribes to these)

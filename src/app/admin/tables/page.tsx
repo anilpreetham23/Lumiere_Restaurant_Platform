@@ -1,6 +1,7 @@
 import QRCode from "qrcode";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getActiveRestaurant } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +16,12 @@ const STATE_STYLE: Record<string, string> = {
 
 export default async function TablesPage() {
   const supabase = await createClient();
+  const active = await getActiveRestaurant();
+  if (!active) return null;
   const { data } = await supabase
     .from("restaurant_tables")
     .select("id,label,token,seats,state")
+    .eq("restaurant_id", active.restaurant_id)
     .order("created_at");
   const tables = (data ?? []) as TableRow[];
 
