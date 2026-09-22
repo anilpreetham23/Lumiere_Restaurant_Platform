@@ -1,6 +1,8 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 
+export type Role = "owner" | "manager" | "staff";
+
 export type Restaurant = {
   id: string;
   name: string;
@@ -11,7 +13,7 @@ export type Restaurant = {
 
 export type RestaurantMembership = {
   restaurant_id: string;
-  role: "owner" | "manager" | "staff";
+  role: Role;
   restaurant: Restaurant;
 };
 
@@ -39,6 +41,50 @@ export async function getActiveRestaurant(): Promise<RestaurantMembership | null
   const cookieStore = await cookies();
   const selected = cookieStore.get(ACTIVE_RESTAURANT_COOKIE)?.value;
   return memberships.find((membership) => membership.restaurant_id === selected) ?? memberships[0];
+}
+
+export type AuthContext = {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  user: NonNullable<Awaited<ReturnType<Awaited<ReturnType<typeof createClient>>["auth"]["getUser"]>>["data"]["user"]>;
+  membership: RestaurantMembership;
+  restaurantId: string;
+  role: Role;
+};
+
+export type RequireRoleResult =
+  | { ok: true; context: AuthContext }
+  | { ok: false; error: string };
+
+export async function requireRole(
+  allowedRoles: Role[] = ["owner", "manager", "staff"]
+): Promise<RequireRoleResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "Not authorised" };
+  }
+
+  const active = await getActiveRestaurant();
+  if (!active) {
+    return { ok: false, error: "No active restaurant membership" };
+  }
+
+  if (!allowedRoles.includes(active.role)) {
+    return { ok: false, error: "Insufficient permissions" };
+  }
+
+  return {
+    ok: true,
+    context: {
+      supabase,
+      user,
+      membership: active,
+      restaurantId: active.restaurant_id,
+      role: active.role,
+    },
+  };
 }
 
 export { ACTIVE_RESTAURANT_COOKIE };
