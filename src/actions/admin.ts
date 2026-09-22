@@ -685,3 +685,164 @@ export async function settleSession(sessionId: string, method: "cash" | "online"
   revalidatePath("/admin/floor");
   return { ok: true };
 }
+
+// ---------- Inventory Management Actions ----------
+
+export type AddInventoryItemInput = {
+  name: string;
+  sku?: string;
+  category?: string;
+  unit: "kg" | "g" | "l" | "ml" | "piece" | "dozen" | "packet" | "box";
+  opening_quantity?: number;
+  reorder_level?: number;
+  cost_per_unit?: number;
+};
+
+export async function addInventoryItem(
+  input: AddInventoryItemInput
+): Promise<{ ok: true; itemId: string } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId, user } = auth.context;
+
+  const name = input.name?.trim();
+  if (!name) return { ok: false, error: "Ingredient name is required" };
+
+  const validUnits = ["kg", "g", "l", "ml", "piece", "dozen", "packet", "box"];
+  if (!input.unit || !validUnits.includes(input.unit)) {
+    return { ok: false, error: "Invalid unit of measurement" };
+  }
+
+  const category = input.category?.trim() || "General";
+  const sku = input.sku?.trim() || null;
+  const openingQty = Number.isFinite(input.opening_quantity) ? Math.max(0, Number(input.opening_quantity)) : 0;
+  const reorderLvl = Number.isFinite(input.reorder_level) ? Math.max(0, Number(input.reorder_level)) : 0;
+  const costPerUnit = Number.isFinite(input.cost_per_unit) ? Math.max(0, Number(input.cost_per_unit)) : 0;
+
+  const { data: item, error } = await supabase
+    .from("inventory_items")
+    .insert({
+      restaurant_id: restaurantId,
+      name,
+      sku,
+      category,
+      unit: input.unit,
+      quantity: openingQty,
+      reorder_level: reorderLvl,
+      cost_per_unit: costPerUnit,
+      is_active: true,
+    })
+    .select("id")
+    .single();
+
+  if (error || !item) {
+    return { ok: false, error: error?.message || "Failed to create inventory item" };
+  }
+
+  // If opening quantity > 0, record initial stock movement for history audit
+  if (openingQty > 0) {
+    await supabase.from("stock_movements").insert({
+      restaurant_id: restaurantId,
+      inventory_item_id: item.id,
+      movement_type: "IN",
+      quantity: openingQty,
+      previous_quantity: 0,
+      resulting_quantity: openingQty,
+      reason: "Initial opening stock",
+      created_by: user.id,
+    });
+  }
+
+  revalidatePath("/admin/inventory");
+  return { ok: true, itemId: item.id };
+}
+
+export type UpdateInventoryItemInput = {
+  id: string;
+  name: string;
+  sku?: string;
+  category?: string;
+  unit: "kg" | "g" | "l" | "ml" | "piece" | "dozen" | "packet" | "box";
+  reorder_level?: number;
+  cost_per_unit?: number;
+  is_active?: boolean;
+};
+
+export async function updateInventoryItem(
+  input: UpdateInventoryItemInput
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  if (!input.id) return { ok: false, error: "Inventory item ID required" };
+  const name = input.name?.trim();
+  if (!name) return { ok: false, error: "Ingredient name is required" };
+
+  const validUnits = ["kg", "g", "l", "ml", "piece", "dozen", "packet", "box"];
+  if (!input.unit || !validUnits.includes(input.unit)) {
+    return { ok: false, error: "Invalid unit of measurement" };
+  }
+
+  const patch: Record<string, unknown> = {
+    name,
+    category: input.category?.trim() || "General",
+    unit: input.unit,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.sku !== undefined) patch.sku = input.sku?.trim() || null;
+  if (Number.isFinite(input.reorder_level)) patch.reorder_level = Math.max(0, Number(input.reorder_level));
+  if (Number.isFinite(input.cost_per_unit)) patch.cost_per_unit = Math.max(0, Number(input.cost_per_unit));
+  if (typeof input.is_active === "boolean") patch.is_active = input.is_active;
+
+  const { error } = await supabase
+    .from("inventory_items")
+    .update(patch)
+    .eq("id", input.id)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/inventory");
+  return { ok: true };
+}
+
+export async function recordStockMovementAction(input: {
+  inventory_item_id: string;
+  type: "IN" | "OUT" | "ADJUSTMENT";
+  quantity: number;
+  reason?: string;
+}): Promise<{ ok: true; resultingQuantity: number } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase } = auth.context;
+
+  if (!input.inventory_item_id) return { ok: false, error: "Inventory item ID required" };
+  if (!["IN", "OUT", "ADJUSTMENT"].includes(input.type)) {
+    return { ok: false, error: "Invalid movement type" };
+  }
+
+  const qty = Number(input.quantity);
+  if (!Number.isFinite(qty)) return { ok: false, error: "Invalid quantity" };
+  if ((input.type === "IN" || input.type === "OUT") && qty <= 0) {
+    return { ok: false, error: "Quantity must be greater than zero" };
+  }
+  if (input.type === "ADJUSTMENT" && qty < 0) {
+    return { ok: false, error: "Adjustment quantity cannot be negative" };
+  }
+
+  const { data, error } = await supabase.rpc("record_stock_movement", {
+    p_inventory_item_id: input.inventory_item_id,
+    p_type: input.type,
+    p_quantity: qty,
+    p_reason: input.reason?.trim() || null,
+  });
+
+  if (error || !data || !data.ok) {
+    return { ok: false, error: error?.message || data?.error || "Stock operation failed" };
+  }
+
+  revalidatePath("/admin/inventory");
+  return { ok: true, resultingQuantity: Number(data.resulting_quantity) };
+}
