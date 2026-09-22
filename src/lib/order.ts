@@ -39,6 +39,9 @@ export type SessionOrder = {
   notes: string | null;
   kind: string;
   status: "placed" | "accepted" | "preparing" | "ready" | "served";
+  started_at?: string | null;
+  completed_at?: string | null;
+  target_prep_mins?: number | null;
 };
 
 export type DiningSession = {

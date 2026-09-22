@@ -65,7 +65,7 @@ export async function setMenuPrice(id: string, price: number) {
 }
 
 export async function addMenuItem(input: {
-  title: string; cuisine: string; price: number; image?: string; short?: string;
+  title: string; cuisine: string; price: number; prep_minutes?: number; image?: string; short?: string;
   dietary?: string[]; spice?: number;
 }) {
   const auth = await requireRole(["owner", "manager"]);
@@ -74,6 +74,7 @@ export async function addMenuItem(input: {
   const title = input.title.trim();
   if (!title) return { ok: false, error: "Title required" };
   if (!Number.isFinite(input.price) || input.price < 0) return { ok: false, error: "Bad price" };
+  const prep_minutes = Number.isInteger(input.prep_minutes) && (input.prep_minutes ?? 0) > 0 ? input.prep_minutes : 15;
   const id =
     title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") +
     "-" + Math.random().toString(36).slice(2, 6);
@@ -82,6 +83,7 @@ export async function addMenuItem(input: {
     title,
     cuisine: input.cuisine,
     price: input.price,
+    prep_minutes,
     image: input.image?.trim() || "/img/menu/1.jpg",
     short: input.short?.trim() || title,
     description: input.short?.trim() || title,
@@ -91,6 +93,58 @@ export async function addMenuItem(input: {
     sort: 999,
   };
   const { error } = await supabase.from("menu_items").insert({ ...row, restaurant_id: restaurantId });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/menu");
+  return { ok: true };
+}
+
+export type UpdateMenuItemInput = {
+  id: string;
+  title: string;
+  cuisine: string;
+  price: number;
+  prep_minutes?: number;
+  short?: string;
+  image?: string;
+  dietary?: string[];
+  spice?: number;
+  available?: boolean;
+};
+
+export async function updateMenuItem(input: UpdateMenuItemInput): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  if (!input.id) return { ok: false, error: "Item ID required" };
+  const title = input.title?.trim();
+  if (!title) return { ok: false, error: "Title required" };
+  if (!Number.isFinite(input.price) || input.price < 0) return { ok: false, error: "Valid price required" };
+
+  const prep_minutes = Number.isInteger(input.prep_minutes) && (input.prep_minutes ?? 0) > 0 ? input.prep_minutes : 15;
+
+  const patch: Record<string, unknown> = {
+    title,
+    cuisine: input.cuisine?.trim() || "Main",
+    price: input.price,
+    prep_minutes,
+    short: input.short?.trim() || title,
+    description: input.short?.trim() || title,
+    image: input.image?.trim() || "/img/menu/1.jpg",
+    dietary: input.dietary ?? [],
+    spice: Number.isFinite(input.spice) ? input.spice : 0,
+  };
+
+  if (typeof input.available === "boolean") {
+    patch.available = input.available;
+  }
+
+  const { error } = await supabase
+    .from("menu_items")
+    .update(patch)
+    .eq("id", input.id)
+    .eq("restaurant_id", restaurantId);
+
   if (error) return { ok: false, error: error.message };
   revalidatePath("/admin/menu");
   return { ok: true };
@@ -443,14 +497,158 @@ export async function updateSettings(patch: Record<string, unknown>) {
   return updateRestaurantSettings(typedInput);
 }
 
-export async function setTableState(id: string, state: "free" | "reserved" | "occupied") {
+export async function setTableState(id: string, state: "free" | "reserved" | "occupied" | "bill_pending") {
   const auth = await requireRole(["owner", "manager", "staff"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId } = auth.context;
+  const allowed = ["free", "reserved", "occupied", "bill_pending"];
+  if (!allowed.includes(state)) return { ok: false, error: "Invalid table state" };
   const patch: Record<string, unknown> = { state };
   if (state === "free") patch.current_session_id = null;
   const { error } = await supabase.from("restaurant_tables").update(patch).eq("id", id).eq("restaurant_id", restaurantId);
   if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/floor");
+  revalidatePath("/admin/tables");
+  return { ok: true };
+}
+
+export type AddTableInput = {
+  label: string;
+  seats: number;
+  section?: string;
+  pos_x?: number;
+  pos_y?: number;
+};
+
+export async function addRestaurantTable(
+  input: AddTableInput
+): Promise<{ ok: true; tableId: string } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const label = input.label?.trim();
+  if (!label) return { ok: false, error: "Table label is required" };
+  if (label.length > 50) return { ok: false, error: "Table label must not exceed 50 characters" };
+
+  const seats = Number(input.seats);
+  if (!Number.isInteger(seats) || seats < 1 || seats > 50) {
+    return { ok: false, error: "Seats must be an integer between 1 and 50" };
+  }
+
+  const section = input.section?.trim() || "Main Dining";
+  if (section.length > 50) return { ok: false, error: "Section must not exceed 50 characters" };
+
+  const posX = Number.isFinite(input.pos_x) ? Math.max(0, Math.min(2000, Number(input.pos_x))) : 0;
+  const posY = Number.isFinite(input.pos_y) ? Math.max(0, Math.min(2000, Number(input.pos_y))) : 0;
+
+  const token = crypto.randomUUID();
+
+  const { data, error } = await supabase
+    .from("restaurant_tables")
+    .insert({
+      restaurant_id: restaurantId,
+      label,
+      seats,
+      section,
+      pos_x: posX,
+      pos_y: posY,
+      token,
+      state: "free",
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) return { ok: false, error: error?.message || "Failed to add table" };
+
+  revalidatePath("/admin/floor");
+  revalidatePath("/admin/tables");
+  return { ok: true, tableId: data.id };
+}
+
+export async function updateTablePosition(
+  id: string,
+  posX: number,
+  posY: number,
+  section?: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  if (!id || typeof id !== "string") return { ok: false, error: "Table ID required" };
+  const validX = Math.max(0, Math.min(2000, Math.round(Number(posX) || 0)));
+  const validY = Math.max(0, Math.min(2000, Math.round(Number(posY) || 0)));
+
+  const patch: Record<string, unknown> = {
+    pos_x: validX,
+    pos_y: validY,
+  };
+  if (typeof section === "string" && section.trim()) {
+    patch.section = section.trim().slice(0, 50);
+  }
+
+  const { error } = await supabase
+    .from("restaurant_tables")
+    .update(patch)
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/floor");
+  return { ok: true };
+}
+
+export async function updateSessionOrderStatus(
+  id: string,
+  status: "placed" | "accepted" | "preparing" | "ready" | "served"
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const allowedStatuses = ["placed", "accepted", "preparing", "ready", "served"];
+  if (!allowedStatuses.includes(status)) {
+    return { ok: false, error: "Invalid status transition" };
+  }
+
+  const patch: Record<string, unknown> = { status };
+  const nowIso = new Date().toISOString();
+
+  if (status === "preparing") {
+    patch.started_at = nowIso;
+  } else if (status === "ready" || status === "served") {
+    patch.completed_at = nowIso;
+  }
+
+  const { error } = await supabase
+    .from("session_orders")
+    .update(patch)
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/kitchen");
+  return { ok: true };
+}
+
+export async function acceptServiceRequest(id: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { error } = await supabase
+    .from("service_requests")
+    .update({ status: "accepted" })
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/kitchen");
+  revalidatePath("/admin/waiter");
   return { ok: true };
 }
 
@@ -484,5 +682,6 @@ export async function settleSession(sessionId: string, method: "cash" | "online"
       .eq("id", sess.table_id)
       .eq("restaurant_id", restaurantId);
   }
+  revalidatePath("/admin/floor");
   return { ok: true };
 }
