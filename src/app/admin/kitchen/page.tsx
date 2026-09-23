@@ -91,6 +91,8 @@ export default function KitchenPage() {
         .select("*")
         .eq("restaurant_id", restaurantId)
         .neq("status", "served")
+        .neq("status", "cancelled")
+
         .order("created_at", { ascending: true }),
       supabase
         .from("dining_sessions")

@@ -101,7 +101,9 @@ export default function FloorPage() {
         .from("session_orders")
         .select("session_id, amount")
         .eq("restaurant_id", restaurantId)
-        .neq("status", "served"),
+        .neq("status", "served")
+        .neq("status", "cancelled"),
+
     ]);
 
     setTables((t.data ?? []) as TableRow[]);

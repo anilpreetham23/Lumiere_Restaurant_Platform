@@ -22,9 +22,10 @@ async function billTotal(token: string): Promise<{ total: number; label: string 
   const { data } = await supabase.rpc("get_session", { p_token: token });
   const snap = data as SessionSnapshot;
   if (!snap || !snap.session) return null;
-  const total = (snap.orders as SessionOrder[]).reduce((s, o) => s + Number(o.amount), 0);
+  const total = (snap.orders as SessionOrder[]).filter((o) => o.status !== "cancelled").reduce((s, o) => s + Number(o.total ?? o.amount), 0);
   return { total, label: snap.table.label };
 }
+
 
 // Shared settlement: mark session paid, free table, record payment (idempotent).
 async function settle(token: string, ref: string, method: string): Promise<{ ok: boolean; receipt?: Receipt; error?: string }> {
@@ -39,8 +40,9 @@ async function settle(token: string, ref: string, method: string): Promise<{ ok:
     .order("created_at", { ascending: false }).limit(1).single();
   if (!sess) return { ok: false, error: "Session not found." };
 
-  const { data: orders } = await admin.from("session_orders").select("amount").eq("session_id", sess.id);
-  const amount = (orders ?? []).reduce((s, o) => s + Number(o.amount), 0) + Number(sess.tip || 0);
+  const { data: orders } = await admin.from("session_orders").select("amount, total, status").eq("session_id", sess.id);
+  const amount = (orders ?? []).filter((o) => o.status !== "cancelled").reduce((s, o) => s + Number(o.total ?? o.amount), 0) + Number(sess.tip || 0);
+
 
   if (sess.payment_status === "paid" && sess.receipt_code) {
     return { ok: true, receipt: { code: sess.receipt_code, amount, table: table.label, method } };
@@ -86,8 +88,9 @@ export async function startBillPayment(token: string, tip = 0): Promise<StartRes
     .order("created_at", { ascending: false }).limit(1).single();
   if (!sess) return { ok: false, error: "No open bill for this table." };
 
-  const { data: orders } = await admin.from("session_orders").select("amount").eq("session_id", sess.id);
-  const orderTotal = (orders ?? []).reduce((s, o) => s + Number(o.amount), 0);
+  const { data: orders } = await admin.from("session_orders").select("amount, total, status").eq("session_id", sess.id);
+  const orderTotal = (orders ?? []).filter((o) => o.status !== "cancelled").reduce((s, o) => s + Number(o.total ?? o.amount), 0);
+
   if (orderTotal <= 0) return { ok: false, error: "Your bill is empty." };
 
   const t = Number.isFinite(tip) && tip > 0 ? Math.round(tip) : 0;

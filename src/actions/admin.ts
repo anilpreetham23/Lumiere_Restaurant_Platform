@@ -26,13 +26,13 @@ export async function setOrderStatus(id: string, status: string) {
 // ---------- Kitchen Display + menu availability ----------
 
 export async function setSessionOrderStatus(id: string, status: string) {
-  const auth = await requireRole(["owner", "manager", "staff"]);
-  if (!auth.ok) return { ok: false, error: auth.error };
-  const { supabase, restaurantId } = auth.context;
-  const { error } = await supabase.from("session_orders").update({ status }).eq("id", id).eq("restaurant_id", restaurantId);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+  if (status === "cancelled") {
+    return { ok: false, error: "Use cancelSessionOrder to cancel an order." };
+  }
+  return updateSessionOrderStatus(id, status as any);
 }
+
+
 
 export async function resolveServiceRequest(id: string) {
   const auth = await requireRole(["owner", "manager", "staff"]);
@@ -608,9 +608,28 @@ export async function updateSessionOrderStatus(
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId } = auth.context;
 
+  if ((status as string) === "cancelled") {
+    return { ok: false, error: "Use cancelSessionOrder to cancel an order." };
+  }
+
   const allowedStatuses = ["placed", "accepted", "preparing", "ready", "served"];
   if (!allowedStatuses.includes(status)) {
     return { ok: false, error: "Invalid status transition" };
+  }
+
+  const { data: currentOrder, error: fetchErr } = await supabase
+    .from("session_orders")
+    .select("id, status")
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (fetchErr || !currentOrder) {
+    return { ok: false, error: "Order not found" };
+  }
+
+  if (currentOrder.status === "cancelled") {
+    return { ok: false, error: "Cannot update status of a cancelled order" };
   }
 
   const patch: Record<string, unknown> = { status };
@@ -631,6 +650,58 @@ export async function updateSessionOrderStatus(
   if (error) return { ok: false, error: error.message };
 
   revalidatePath("/admin/kitchen");
+  revalidatePath("/admin/floor");
+  return { ok: true };
+}
+
+export async function cancelSessionOrder(
+  id: string,
+  reason: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId, user } = auth.context;
+
+  const trimmedReason = reason?.trim();
+  if (!trimmedReason) {
+    return { ok: false, error: "Cancellation reason is required" };
+  }
+
+  const { data: order, error: fetchErr } = await supabase
+    .from("session_orders")
+    .select("id, status, restaurant_id")
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (fetchErr || !order) {
+    return { ok: false, error: "Order not found" };
+  }
+
+  if (order.status === "cancelled") {
+    return { ok: false, error: "Order is already cancelled" };
+  }
+
+  if (!["placed", "accepted"].includes(order.status)) {
+    return { ok: false, error: `Cannot cancel order in '${order.status}' status` };
+  }
+
+  const nowIso = new Date().toISOString();
+  const { error } = await supabase
+    .from("session_orders")
+    .update({
+      status: "cancelled",
+      cancellation_reason: trimmedReason,
+      cancelled_at: nowIso,
+      cancelled_by: user.id,
+    })
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/kitchen");
+  revalidatePath("/admin/floor");
   return { ok: true };
 }
 

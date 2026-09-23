@@ -30,15 +30,28 @@ export type OrderLine = {
   notes?: string | null;
 };
 
+export type OrderSource = "dine_in" | "takeaway" | "delivery" | "pos_manual" | "swiggy" | "zomato";
+
 export type SessionOrder = {
   id: string;
   created_at: string;
+  restaurant_id?: string;
   session_id: string;
+  order_number: number;
   items: OrderLine[];
   amount: number;
+  subtotal: number;
+  discount: number;
+  tax: number;
+  service_charge: number;
+  total: number;
   notes: string | null;
   kind: string;
-  status: "placed" | "accepted" | "preparing" | "ready" | "served";
+  source: OrderSource;
+  status: "placed" | "accepted" | "preparing" | "ready" | "served" | "cancelled";
+  cancellation_reason?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
   target_prep_mins?: number | null;
@@ -76,8 +89,12 @@ export const STATUS_LABEL: Record<string, string> = {
   preparing: "Being prepared",
   ready: "Ready to serve",
   served: "Served",
+  cancelled: "Cancelled",
 };
 
 export function sessionTotal(orders: SessionOrder[]): number {
-  return orders.reduce((s, o) => s + Number(o.amount), 0);
+  return orders
+    .filter((o) => o.status !== "cancelled")
+    .reduce((s, o) => s + Number(o.total ?? o.amount), 0);
 }
+

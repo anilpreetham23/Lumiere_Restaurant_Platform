@@ -626,7 +626,8 @@ function OrderCard({ order, menuMap, onRate, ratedIds }: {
   order: SessionOrder; menuMap: Record<string, MenuItem>;
   onRate: (menuItemId: string, stars: number) => void; ratedIds: Set<string>;
 }) {
-  const stepIdx = ORDER_STEPS.indexOf(order.status);
+  const isCancelled = order.status === "cancelled";
+  const stepIdx = isCancelled ? -1 : ORDER_STEPS.indexOf(order.status as typeof ORDER_STEPS[number]);
   const prep = Math.max(...order.items.map((i) => menuMap[i.menu_item_id]?.prep_minutes ?? 15), 10);
   const elapsed = Math.floor((Date.now() - new Date(order.created_at).getTime()) / 60000);
   const remaining = Math.max(0, prep - elapsed);
@@ -638,19 +639,24 @@ function OrderCard({ order, menuMap, onRate, ratedIds }: {
         <span className="text-sm text-neutral-600">
           {order.items.map((i) => `${i.qty}× ${i.title}`).join(", ")}
         </span>
-        <span className="font-medium text-wine">{money(Number(order.amount))}</span>
+        <span className={`font-medium ${isCancelled ? "line-through text-neutral-400" : "text-wine"}`}>
+          {money(Number(order.total ?? order.amount))}
+        </span>
       </div>
       <div className="flex items-center gap-2 text-sm">
-        <ChefHat size={16} className={done ? "text-green-600" : "text-gold"} />
-        <span className="font-medium">{STATUS_LABEL[order.status]}</span>
-        {!done && remaining > 0 && <span className="text-neutral-400">· ~{remaining} min</span>}
+        <ChefHat size={16} className={done ? "text-green-600" : isCancelled ? "text-red-500" : "text-gold"} />
+        <span className={`font-medium ${isCancelled ? "text-red-600" : ""}`}>{STATUS_LABEL[order.status]}</span>
+        {!done && !isCancelled && remaining > 0 && <span className="text-neutral-400">· ~{remaining} min</span>}
       </div>
       {/* progress */}
-      <div className="mt-3 flex gap-1">
-        {ORDER_STEPS.map((_, i) => (
-          <div key={i} className={`h-1.5 flex-1 rounded-full ${i <= stepIdx ? "bg-gold" : "bg-cream2"}`} />
-        ))}
-      </div>
+      {!isCancelled && (
+        <div className="mt-3 flex gap-1">
+          {ORDER_STEPS.map((_, i) => (
+            <div key={i} className={`h-1.5 flex-1 rounded-full ${i <= stepIdx ? "bg-gold" : "bg-cream2"}`} />
+          ))}
+        </div>
+      )}
+
       {/* rate served dishes */}
       {done && (
         <div className="mt-3 space-y-2 border-t border-cream2 pt-3">
