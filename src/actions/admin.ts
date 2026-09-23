@@ -1793,3 +1793,438 @@ export async function receivePOSourceStockAction(poId: string, items: Array<{ po
   revalidatePath("/admin/inventory");
   return { ok: true as const, result: data };
 }
+
+// ============================================================
+// RESERVATION MANAGEMENT ACTIONS
+// ============================================================
+
+export type ReservationAdminFilter = {
+  date?: string;
+  status?: string;
+  search?: string;
+};
+
+export type ReservationInputAdmin = {
+  name: string;
+  phone: string;
+  email: string;
+  guests: string;
+  date: string;
+  time: string;
+  table_id?: string | null;
+  requests?: string;
+  deposit_amount?: number;
+  deposit_status?: string;
+  status?: string;
+};
+
+export async function getReservationsAdminAction(filters?: ReservationAdminFilter) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error, data: [] };
+  const { supabase, restaurantId } = auth.context;
+
+  let query = supabase
+    .from("reservations")
+    .select("*, restaurant_tables(id, label, max_capacity, state)")
+    .eq("restaurant_id", restaurantId);
+
+  if (filters?.date) {
+    query = query.eq("date", filters.date);
+  }
+  if (filters?.status && filters.status !== "all") {
+    query = query.eq("status", filters.status);
+  }
+
+  const { data, error } = await query.order("date", { ascending: false }).order("time", { ascending: true });
+  if (error) return { ok: false, error: error.message, data: [] };
+
+  let list = data || [];
+  if (filters?.search && filters.search.trim()) {
+    const term = filters.search.trim().toLowerCase();
+    list = list.filter((r) =>
+      r.name?.toLowerCase().includes(term) ||
+      r.phone?.toLowerCase().includes(term) ||
+      r.email?.toLowerCase().includes(term) ||
+      r.restaurant_tables?.label?.toLowerCase().includes(term)
+    );
+  }
+
+  return { ok: true, data: list };
+}
+
+export async function createReservationAdminAction(input: ReservationInputAdmin) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const name = input.name?.trim();
+  const phone = input.phone?.trim();
+  const email = input.email?.trim();
+  const guests = input.guests?.trim();
+  const date = input.date?.trim();
+  const time = input.time?.trim();
+
+  if (!name || !phone || !email || !guests || !date || !time) {
+    return { ok: false, error: "Please complete all required fields (name, phone, email, guests, date, time)." };
+  }
+
+  if (input.table_id) {
+    // 1. Verify table belongs to restaurant
+    const { data: tbl } = await supabase
+      .from("restaurant_tables")
+      .select("id, max_capacity")
+      .eq("id", input.table_id)
+      .eq("restaurant_id", restaurantId)
+      .single();
+
+    if (!tbl) return { ok: false, error: "Selected table does not belong to this restaurant." };
+
+    // 2. Conflict check
+    const { data: conflict } = await supabase
+      .from("reservations")
+      .select("id")
+      .eq("restaurant_id", restaurantId)
+      .eq("table_id", input.table_id)
+      .eq("date", date)
+      .eq("time", time)
+      .in("status", ["pending", "confirmed", "seated"])
+      .maybeSingle();
+
+    if (conflict) {
+      return { ok: false, error: "Table is already reserved at this date and time." };
+    }
+  }
+
+  const deposit_amount = Number.isFinite(input.deposit_amount) && (input.deposit_amount ?? 0) >= 0
+    ? Number(input.deposit_amount)
+    : 0;
+
+  const deposit_status = input.deposit_status || (deposit_amount > 0 ? "pending" : "none");
+  const status = input.status || (deposit_status === "paid" ? "confirmed" : "pending");
+
+  const { data, error } = await supabase
+    .from("reservations")
+    .insert({
+      restaurant_id: restaurantId,
+      name,
+      phone,
+      email,
+      guests,
+      date,
+      time,
+      table_id: input.table_id || null,
+      requests: input.requests?.trim() || null,
+      deposit_amount,
+      deposit_status,
+      status,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/reservations");
+  return { ok: true, id: data.id };
+}
+
+export async function updateReservationAdminAction(id: string, input: Partial<ReservationInputAdmin>) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  // 1. Fetch existing reservation
+  const { data: existing } = await supabase
+    .from("reservations")
+    .select("*")
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (!existing) return { ok: false, error: "Reservation not found." };
+
+  const patch: Record<string, unknown> = {};
+
+  if (input.name !== undefined) patch.name = input.name.trim();
+  if (input.phone !== undefined) patch.phone = input.phone.trim();
+  if (input.email !== undefined) patch.email = input.email.trim();
+  if (input.guests !== undefined) patch.guests = input.guests.trim();
+  if (input.requests !== undefined) patch.requests = input.requests ? input.requests.trim() : null;
+  if (input.deposit_amount !== undefined) patch.deposit_amount = Math.max(0, Number(input.deposit_amount));
+  if (input.deposit_status !== undefined) patch.deposit_status = input.deposit_status;
+
+  const targetDate = input.date ? input.date.trim() : existing.date;
+  const targetTime = input.time ? input.time.trim() : existing.time;
+  const targetTableId = input.table_id !== undefined ? input.table_id : existing.table_id;
+
+  if (input.date !== undefined) patch.date = targetDate;
+  if (input.time !== undefined) patch.time = targetTime;
+  if (input.table_id !== undefined) patch.table_id = targetTableId;
+
+  // Status transition validation
+  if (input.status && input.status !== existing.status) {
+    const validTransitions: Record<string, string[]> = {
+      pending: ["confirmed", "seated", "cancelled", "no_show"],
+      confirmed: ["seated", "completed", "cancelled", "no_show"],
+      seated: ["completed", "cancelled"],
+      cancelled: ["pending"],
+      completed: [],
+      no_show: [],
+    };
+
+    const allowed = validTransitions[existing.status] || [];
+    if (!allowed.includes(input.status)) {
+      return { ok: false, error: `Invalid reservation status transition from '${existing.status}' to '${input.status}'.` };
+    }
+    patch.status = input.status;
+  }
+
+  // Conflict validation if table, date, or time changed
+  if (targetTableId) {
+    if (input.table_id && input.table_id !== existing.table_id) {
+      const { data: tbl } = await supabase
+        .from("restaurant_tables")
+        .select("id")
+        .eq("id", targetTableId)
+        .eq("restaurant_id", restaurantId)
+        .single();
+      if (!tbl) return { ok: false, error: "Selected table does not belong to this restaurant." };
+    }
+
+    const { data: conflict } = await supabase
+      .from("reservations")
+      .select("id")
+      .eq("restaurant_id", restaurantId)
+      .eq("table_id", targetTableId)
+      .eq("date", targetDate)
+      .eq("time", targetTime)
+      .in("status", ["pending", "confirmed", "seated"])
+      .neq("id", id)
+      .maybeSingle();
+
+    if (conflict) {
+      return { ok: false, error: "Table is already reserved at this date and time." };
+    }
+  }
+
+  const { error } = await supabase
+    .from("reservations")
+    .update(patch)
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/reservations");
+  return { ok: true };
+}
+
+export async function setReservationStatusAdminAction(id: string, newStatus: string) {
+  return updateReservationAdminAction(id, { status: newStatus });
+}
+
+export async function seatReservationAdminAction(id: string, tableId?: string) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data: existing } = await supabase
+    .from("reservations")
+    .select("*")
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (!existing) return { ok: false, error: "Reservation not found." };
+
+  const targetTableId = tableId || existing.table_id;
+  if (!targetTableId) {
+    return { ok: false, error: "Please select a table to seat this reservation." };
+  }
+
+  // Verify table ownership
+  const { data: tbl } = await supabase
+    .from("restaurant_tables")
+    .select("id, label, state")
+    .eq("id", targetTableId)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (!tbl) return { ok: false, error: "Table not found or tenant mismatch." };
+
+  // Set table state to occupied
+  await supabase
+    .from("restaurant_tables")
+    .update({ state: "occupied" })
+    .eq("id", targetTableId)
+    .eq("restaurant_id", restaurantId);
+
+  // Update reservation
+  const { error } = await supabase
+    .from("reservations")
+    .update({
+      table_id: targetTableId,
+      status: "seated",
+    })
+    .eq("id", id)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/reservations");
+  revalidatePath("/admin/floor");
+  return { ok: true };
+}
+
+// ============================================================
+// PAYMENTS & REFUNDS ADMIN ACTIONS
+// ============================================================
+
+export type PaymentAdminFilter = {
+  search?: string;
+  status?: string;
+  provider?: string;
+  method?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  page?: number;
+  limit?: number;
+};
+
+export async function getPaymentsAdminAction(filters?: PaymentAdminFilter) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error, data: [], stats: { totalReceived: 0, totalRefunded: 0, netRevenue: 0, totalCount: 0 } };
+  const { supabase, restaurantId } = auth.context;
+
+  let query = supabase
+    .from("payments")
+    .select(`
+      *,
+      payment_refunds(*),
+      dining_sessions(id, table_id, status, payment_status, receipt_code, restaurant_tables(label)),
+      reservations(id, name, phone, email, date, time, deposit_status)
+    `, { count: "exact" })
+    .eq("restaurant_id", restaurantId);
+
+  if (filters?.status && filters.status !== "all") {
+    query = query.eq("status", filters.status);
+  }
+  if (filters?.provider && filters.provider !== "all") {
+    query = query.eq("provider", filters.provider);
+  }
+  if (filters?.method && filters.method !== "all") {
+    query = query.eq("payment_method_type", filters.method);
+  }
+  if (filters?.dateFrom) {
+    query = query.gte("created_at", `${filters.dateFrom}T00:00:00Z`);
+  }
+  if (filters?.dateTo) {
+    query = query.lte("created_at", `${filters.dateTo}T23:59:59Z`);
+  }
+
+  const { data, count, error } = await query.order("created_at", { ascending: false });
+  if (error) return { ok: false, error: error.message, data: [], stats: { totalReceived: 0, totalRefunded: 0, netRevenue: 0, totalCount: 0 } };
+
+  let list = data || [];
+
+  if (filters?.search && filters.search.trim()) {
+    const term = filters.search.trim().toLowerCase();
+    list = list.filter((p) =>
+      p.receipt_code?.toLowerCase().includes(term) ||
+      p.provider_payment_id?.toLowerCase().includes(term) ||
+      p.provider_order_id?.toLowerCase().includes(term) ||
+      p.reservations?.name?.toLowerCase().includes(term) ||
+      p.reservations?.phone?.toLowerCase().includes(term) ||
+      p.dining_sessions?.restaurant_tables?.label?.toLowerCase().includes(term)
+    );
+  }
+
+  // Calculate stats
+  let totalReceived = 0;
+  let totalRefunded = 0;
+
+  for (const p of list) {
+    if (p.status === "paid" || p.status === "partially_refunded" || p.status === "refunded") {
+      totalReceived += Number(p.paid_amount || p.amount || 0);
+    }
+    const refunds = p.payment_refunds || [];
+    for (const r of refunds) {
+      if (r.status === "succeeded") {
+        totalRefunded += Number(r.amount || 0);
+      }
+    }
+  }
+
+  const netRevenue = totalReceived - totalRefunded;
+
+  return {
+    ok: true,
+    data: list,
+    stats: {
+      totalReceived,
+      totalRefunded,
+      netRevenue,
+      totalCount: count || list.length,
+    }
+  };
+}
+
+export async function getPaymentDetailsAdminAction(paymentId: string) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data, error } = await supabase
+    .from("payments")
+    .select(`
+      *,
+      payment_intents(*),
+      payment_refunds(*),
+      dining_sessions(*, restaurant_tables(*)),
+      reservations(*)
+    `)
+    .eq("id", paymentId)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (error || !data) return { ok: false, error: error?.message || "Payment details not found." };
+  return { ok: true, data };
+}
+
+export async function processRefundAdminAction(input: {
+  paymentId: string;
+  amount?: number;
+  reason?: string;
+}) {
+  // STRICT AUTHORIZATION: Owner and Manager ONLY! Staff and Anonymous are rejected!
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) {
+    return { ok: false, error: auth.error || "Financial refund authority required (Owner/Manager only)." };
+  }
+
+  const { restaurantId, user } = auth.context;
+
+  if (!input.paymentId) {
+    return { ok: false, error: "Payment ID is required." };
+  }
+
+  // Execute atomic refund RPC using admin service-role client
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.rpc("process_payment_refund_atomic", {
+    p_restaurant_id: restaurantId,
+    p_payment_id: input.paymentId,
+    p_refund_amount: input.amount ? Number(input.amount) : null,
+    p_reason: input.reason?.trim() || null,
+    p_created_by: user.id,
+  });
+
+  if (error || !data) {
+    return { ok: false, error: error?.message || "Failed to process refund." };
+  }
+
+  if (data.ok === false) {
+    return { ok: false, error: data.error || data.message || "Failed to process refund." };
+  }
+
+  revalidatePath("/admin/payments");
+  revalidatePath("/admin/reservations");
+  return { ok: true as const, result: data };
+}

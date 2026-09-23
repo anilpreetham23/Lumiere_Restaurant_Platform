@@ -40,6 +40,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             )}
             <Link href="/admin" className="text-sm text-neutral-600 hover:text-wine">Dashboard</Link>
             <Link href="/admin/floor" className="text-sm text-neutral-600 hover:text-wine">Floor Map & QR</Link>
+            <Link href="/admin/reservations" className="text-sm text-neutral-600 hover:text-wine">Reservations</Link>
             <Link href="/admin/orders" className="text-sm text-neutral-600 hover:text-wine">Orders</Link>
             <Link href="/admin/kitchen" className="text-sm text-neutral-600 hover:text-wine">Kitchen</Link>
             <Link href="/admin/waiter" className="text-sm text-neutral-600 hover:text-wine">Waiter</Link>
@@ -47,6 +48,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/admin/recipes" className="text-sm text-neutral-600 hover:text-wine">Recipes</Link>
             <Link href="/admin/inventory" className="text-sm text-neutral-600 hover:text-wine">Inventory</Link>
             <Link href="/admin/purchasing" className="text-sm text-neutral-600 hover:text-wine">Purchasing</Link>
+            <Link href="/admin/payments" className="text-sm text-neutral-600 hover:text-wine">Payments</Link>
             <Link href="/admin/settings" className="text-sm text-neutral-600 hover:text-wine">Settings</Link>
             <Link href="/" className="text-sm text-neutral-600 hover:text-wine">View site</Link>
             <AdminLogout />
