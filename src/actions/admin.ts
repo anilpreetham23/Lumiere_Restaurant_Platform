@@ -2228,3 +2228,353 @@ export async function processRefundAdminAction(input: {
   revalidatePath("/admin/reservations");
   return { ok: true as const, result: data };
 }
+
+// ============================================================
+// CUSTOMERS, REVIEWS & LOYALTY MODULE ACTIONS
+// ============================================================
+
+// --- CUSTOMERS ACTIONS ---
+
+export async function getCustomersAdminAction(search?: string, page: number = 1) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error, data: [], stats: { totalCustomers: 0, totalVisits: 0 } };
+  const { supabase, restaurantId } = auth.context;
+
+  let query = supabase
+    .from("customers")
+    .select("*, loyalty_accounts(balance, lifetime_points)", { count: "exact" })
+    .eq("restaurant_id", restaurantId);
+
+  if (search && search.trim()) {
+    const term = search.trim();
+    query = query.or(`name.ilike.%${term}%,phone.ilike.%${term}%,email.ilike.%${term}%`);
+  }
+
+  const pageSize = 20;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  const { data, count, error } = await query
+    .order("last_visit_at", { ascending: false, nullsFirst: false })
+    .range(from, to);
+
+  if (error) return { ok: false, error: error.message, data: [], stats: { totalCustomers: 0, totalVisits: 0 } };
+
+  // Overall stats
+  const { count: totalCustomers } = await supabase
+    .from("customers")
+    .select("*", { count: "exact", head: true })
+    .eq("restaurant_id", restaurantId);
+
+  const { data: visitsData } = await supabase
+    .from("customers")
+    .select("visits")
+    .eq("restaurant_id", restaurantId);
+
+  const totalVisits = (visitsData || []).reduce((acc, c) => acc + (c.visits || 0), 0);
+
+  return {
+    ok: true,
+    data: data || [],
+    pagination: {
+      page,
+      pageSize,
+      totalCount: count || 0,
+      totalPages: Math.ceil((count || 0) / pageSize),
+    },
+    stats: {
+      totalCustomers: totalCustomers || 0,
+      totalVisits,
+    },
+  };
+}
+
+export async function getCustomerDetailAdminAction(customerId: string) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data: customer, error } = await supabase
+    .from("customers")
+    .select(`
+      *,
+      loyalty_accounts(*),
+      loyalty_transactions(*)
+    `)
+    .eq("id", customerId)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (error || !customer) return { ok: false, error: error?.message || "Customer not found." };
+
+  // Fetch dining sessions & orders for this customer (matched by phone)
+  const { data: sessions } = await supabase
+    .from("dining_sessions")
+    .select(`
+      *,
+      restaurant_tables(label),
+      session_orders(*)
+    `)
+    .eq("restaurant_id", restaurantId)
+    .eq("phone", customer.phone)
+    .order("created_at", { ascending: false });
+
+  // Compute spend stats
+  let totalSpend = 0;
+  let orderCount = 0;
+  const recentOrders: any[] = [];
+
+  (sessions || []).forEach((sess) => {
+    (sess.session_orders || []).forEach((ord: any) => {
+      orderCount++;
+      totalSpend += Number(ord.total || ord.amount || 0);
+      recentOrders.push({
+        ...ord,
+        table_label: sess.restaurant_tables?.label,
+        session_created_at: sess.created_at,
+      });
+    });
+  });
+
+  recentOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  return {
+    ok: true,
+    data: {
+      customer,
+      sessions: sessions || [],
+      recentOrders: recentOrders.slice(0, 10),
+      stats: {
+        totalSpend,
+        orderCount,
+        avgOrderValue: orderCount > 0 ? totalSpend / orderCount : 0,
+      },
+    },
+  };
+}
+
+export async function updateCustomerAdminAction(
+  customerId: string,
+  input: { name?: string; email?: string; phone?: string; birthday?: string; notes?: string }
+) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Manager authority required to update customer profile." };
+  const { supabase, restaurantId } = auth.context;
+
+  const updatePayload: any = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.name !== undefined) updatePayload.name = input.name.trim() || null;
+  if (input.email !== undefined) updatePayload.email = input.email.trim() || null;
+  if (input.phone !== undefined) updatePayload.phone = input.phone.trim();
+  if (input.birthday !== undefined) updatePayload.birthday = input.birthday || null;
+  if (input.notes !== undefined) updatePayload.notes = input.notes.trim() || null;
+
+  const { error } = await supabase
+    .from("customers")
+    .update(updatePayload)
+    .eq("id", customerId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/customers");
+  return { ok: true };
+}
+
+// --- REVIEWS & RATINGS ACTIONS ---
+
+export async function getReviewsAdminAction(ratingFilter?: number, statusFilter?: string) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error, data: [], stats: { avgRating: 0, totalReviews: 0 } };
+  const { supabase, restaurantId } = auth.context;
+
+  let query = supabase
+    .from("dish_ratings")
+    .select(`
+      *,
+      menu_items(title, cuisine, image),
+      customers(name, phone)
+    `)
+    .eq("restaurant_id", restaurantId);
+
+  if (ratingFilter && ratingFilter >= 1 && ratingFilter <= 5) {
+    query = query.eq("rating", ratingFilter);
+  }
+
+  if (statusFilter && statusFilter !== "all") {
+    query = query.eq("status", statusFilter);
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: false });
+  if (error) return { ok: false, error: error.message, data: [], stats: { avgRating: 0, totalReviews: 0 } };
+
+  const list = data || [];
+  const totalCount = list.length;
+  const sumRating = list.reduce((acc, r) => acc + (r.rating || 0), 0);
+  const avgRating = totalCount > 0 ? Math.round((sumRating / totalCount) * 10) / 10 : 0;
+
+  return {
+    ok: true,
+    data: list,
+    stats: {
+      avgRating,
+      totalReviews: totalCount,
+    },
+  };
+}
+
+export async function updateReviewStatusAdminAction(reviewId: string, status: "published" | "hidden" | "flagged") {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required to moderate reviews." };
+  const { supabase, restaurantId } = auth.context;
+
+  const { error } = await supabase
+    .from("dish_ratings")
+    .update({
+      status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", reviewId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/reviews");
+  return { ok: true };
+}
+
+// --- LOYALTY ACTIONS ---
+
+export async function getLoyaltyOverviewAdminAction() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const [accountsRes, txRes] = await Promise.all([
+    supabase
+      .from("loyalty_accounts")
+      .select("balance, lifetime_points")
+      .eq("restaurant_id", restaurantId),
+    supabase
+      .from("loyalty_transactions")
+      .select("type, points")
+      .eq("restaurant_id", restaurantId),
+  ]);
+
+  const accounts = accountsRes.data || [];
+  const transactions = txRes.data || [];
+
+  const totalLoyaltyCustomers = accounts.length;
+  const currentOutstandingPoints = accounts.reduce((acc, a) => acc + (a.balance || 0), 0);
+
+  let totalIssued = 0;
+  let totalRedeemed = 0;
+
+  transactions.forEach((tx) => {
+    if (tx.type === "earn" || (tx.type === "adjustment" && tx.points > 0)) {
+      totalIssued += Math.abs(tx.points);
+    } else if (tx.type === "redeem" || (tx.type === "adjustment" && tx.points < 0)) {
+      totalRedeemed += Math.abs(tx.points);
+    }
+  });
+
+  return {
+    ok: true,
+    data: {
+      totalLoyaltyCustomers,
+      totalIssued,
+      totalRedeemed,
+      currentOutstandingPoints,
+    },
+  };
+}
+
+export async function getLoyaltyCustomersAdminAction(queryStr?: string) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error, data: [] };
+  const { supabase, restaurantId } = auth.context;
+
+  let query = supabase
+    .from("loyalty_accounts")
+    .select(`
+      *,
+      customers(id, name, phone, email, visits, last_visit_at)
+    `)
+    .eq("restaurant_id", restaurantId);
+
+  const { data, error } = await query.order("balance", { ascending: false });
+  if (error) return { ok: false, error: error.message, data: [] };
+
+  let list = data || [];
+  if (queryStr && queryStr.trim()) {
+    const term = queryStr.trim().toLowerCase();
+    list = list.filter((a) =>
+      a.customers?.name?.toLowerCase().includes(term) ||
+      a.customers?.phone?.toLowerCase().includes(term) ||
+      a.customers?.email?.toLowerCase().includes(term)
+    );
+  }
+
+  return { ok: true, data: list };
+}
+
+export async function getCustomerLoyaltyHistoryAdminAction(customerId: string) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data: transactions, error } = await supabase
+    .from("loyalty_transactions")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .eq("customer_id", customerId)
+    .order("created_at", { ascending: false });
+
+  if (error) return { ok: false, error: error.message, data: [] };
+  return { ok: true, data: transactions || [] };
+}
+
+export async function adjustLoyaltyPointsAdminAction(input: {
+  customerId: string;
+  points: number;
+  reason: string;
+}) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) {
+    return { ok: false, error: auth.error || "Manager or Owner authority required for manual loyalty adjustments." };
+  }
+  const { restaurantId, user } = auth.context;
+
+  if (!input.customerId || !input.reason || !input.reason.trim()) {
+    return { ok: false, error: "Customer ID and adjustment reason are required." };
+  }
+
+  if (!input.points || input.points === 0) {
+    return { ok: false, error: "Adjustment points cannot be zero." };
+  }
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.rpc("adjust_loyalty_points_atomic", {
+    p_restaurant_id: restaurantId,
+    p_customer_id: input.customerId,
+    p_points: Math.round(Number(input.points)),
+    p_reason: input.reason.trim(),
+    p_created_by: user.id,
+  });
+
+  if (error || !data) {
+    return { ok: false, error: error?.message || "Failed to adjust loyalty points." };
+  }
+
+  if (data.ok === false) {
+    return { ok: false, error: data.error || data.message || "Failed to adjust loyalty points." };
+  }
+
+  revalidatePath("/admin/loyalty");
+  revalidatePath("/admin/customers");
+  return { ok: true, result: data };
+}
