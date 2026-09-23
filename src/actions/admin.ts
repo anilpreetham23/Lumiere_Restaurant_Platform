@@ -917,3 +917,158 @@ export async function recordStockMovementAction(input: {
   revalidatePath("/admin/inventory");
   return { ok: true, resultingQuantity: Number(data.resulting_quantity) };
 }
+
+// ---------- Central Orders Hub Actions ----------
+
+export interface GetAdminOrdersParams {
+  status?: string;
+  source?: string;
+  dateRange?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export async function getAdminOrders(params: GetAdminOrdersParams = {}) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const page = Math.max(1, params.page || 1);
+  const pageSize = Math.max(1, Math.min(100, params.pageSize || 25));
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from("session_orders")
+    .select(
+      `
+      *,
+      dining_sessions (
+        customer_name,
+        phone,
+        guests,
+        status,
+        restaurant_tables (
+          label,
+          section
+        )
+      )
+    `,
+      { count: "exact" }
+    )
+    .eq("restaurant_id", restaurantId);
+
+  // Filter by status
+  if (params.status && params.status !== "all") {
+    if (params.status === "active") {
+      query = query.in("status", ["placed", "accepted", "preparing", "ready"]);
+    } else if (params.status === "completed") {
+      query = query.eq("status", "served");
+    } else if (params.status === "cancelled") {
+      query = query.eq("status", "cancelled");
+    } else {
+      query = query.eq("status", params.status);
+    }
+  }
+
+  // Filter by source
+  if (params.source && params.source !== "all") {
+    query = query.eq("source", params.source);
+  }
+
+  // Filter by dateRange
+  if (params.dateRange && params.dateRange !== "all") {
+    const now = new Date();
+    if (params.dateRange === "today") {
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      query = query.gte("created_at", startOfDay);
+    } else if (params.dateRange === "yesterday") {
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startOfYesterday = new Date(startOfToday.getTime() - 86400000).toISOString();
+      query = query.gte("created_at", startOfYesterday).lt("created_at", startOfToday.toISOString());
+    } else if (params.dateRange === "7days") {
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
+      query = query.gte("created_at", sevenDaysAgo);
+    }
+  }
+
+  // Filter by search
+  if (params.search && params.search.trim()) {
+    const cleanSearch = params.search.trim();
+    const sanitizedSearch = cleanSearch.replace(/[,()%\\]/g, "");
+    if (sanitizedSearch) {
+      const isNum = !isNaN(Number(sanitizedSearch));
+      if (isNum) {
+        query = query.or(`order_number.eq.${Number(sanitizedSearch)},notes.ilike.%${sanitizedSearch}%`);
+      } else {
+        const { data: matchedSessions } = await supabase
+          .from("dining_sessions")
+          .select("id, restaurant_tables!inner(label)")
+          .eq("restaurant_id", restaurantId)
+          .or(
+            `customer_name.ilike.%${sanitizedSearch}%,phone.ilike.%${sanitizedSearch}%,restaurant_tables.label.ilike.%${sanitizedSearch}%`
+          );
+
+        const sessionIds = (matchedSessions ?? []).map((ds) => ds.id);
+        if (sessionIds.length > 0) {
+          query = query.or(`notes.ilike.%${sanitizedSearch}%,session_id.in.(${sessionIds.join(",")})`);
+        } else {
+          query = query.ilike("notes", `%${sanitizedSearch}%`);
+        }
+      }
+    }
+  }
+
+  query = query.order("created_at", { ascending: false }).range(from, to);
+
+  const { data, count, error } = await query;
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  // Calculate summary metrics for tenant
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+
+  const [activeRes, todaySalesRes, cancelledRes] = await Promise.all([
+    supabase
+      .from("session_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId)
+      .in("status", ["placed", "accepted", "preparing", "ready"]),
+    supabase
+      .from("session_orders")
+      .select("total, amount")
+      .eq("restaurant_id", restaurantId)
+      .eq("status", "served")
+      .gte("created_at", startOfToday),
+    supabase
+      .from("session_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId)
+      .eq("status", "cancelled"),
+  ]);
+
+  const todaySales = (todaySalesRes.data ?? []).reduce(
+    (acc, curr) => acc + Number(curr.total ?? curr.amount ?? 0),
+    0
+  );
+
+  return {
+    ok: true as const,
+    orders: data ?? [],
+    totalCount: count ?? 0,
+    page,
+    pageSize,
+    totalPages: Math.ceil((count ?? 0) / pageSize) || 1,
+    metrics: {
+      totalOrders: count ?? 0,
+      activeOrders: activeRes.count ?? 0,
+      todaySales,
+      cancelledOrders: cancelledRes.count ?? 0,
+    },
+  };
+}
+
