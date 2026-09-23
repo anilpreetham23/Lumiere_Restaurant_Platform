@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/tenant";
 import type { CreateStaffOrderInput } from "@/lib/order";
+import type { SaveRecipeInput, RecipeHeaderDetail } from "@/lib/recipe";
 
 export async function setReservationStatus(id: string, status: string) {
   const auth = await requireRole(["owner", "manager", "staff"]);
@@ -1111,4 +1112,272 @@ export async function createStaffOrderAction(input: CreateStaffOrderInput) {
   revalidatePath("/admin/kitchen");
 
   return { ok: true as const, result: data };
+}
+
+export async function getRecipes() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data, error } = await supabase
+    .from("recipe_headers")
+    .select(`
+      id,
+      restaurant_id,
+      menu_item_id,
+      name,
+      yield_quantity,
+      yield_unit,
+      is_active,
+      created_at,
+      updated_at,
+      menu_items!inner(id, title, category, price, available),
+      recipe_ingredients(
+        id,
+        recipe_id,
+        inventory_item_id,
+        quantity,
+        unit,
+        created_at,
+        updated_at,
+        inventory_items(id, name, sku, category, unit, quantity, cost_per_unit, is_active)
+      )
+    `)
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  const recipes = (data || []).map((r: any) => {
+    let totalCost = 0;
+    if (Array.isArray(r.recipe_ingredients)) {
+      r.recipe_ingredients.forEach((ing: any) => {
+        const itemCost = Number(ing.inventory_items?.cost_per_unit ?? 0);
+        const qty = Number(ing.quantity ?? 0);
+        totalCost += itemCost * qty;
+      });
+    }
+
+    const yieldQty = Number(r.yield_quantity || 1);
+    const costPerYield = yieldQty > 0 ? totalCost / yieldQty : totalCost;
+    const menuPrice = Number(r.menu_items?.price ?? 0);
+    const foodCostPercentage = menuPrice > 0 ? (costPerYield / menuPrice) * 100 : 0;
+
+    return {
+      ...r,
+      total_cost: Math.round(totalCost * 100) / 100,
+      cost_per_yield: Math.round(costPerYield * 100) / 100,
+      food_cost_percentage: Math.round(foodCostPercentage * 100) / 100,
+    } as RecipeHeaderDetail;
+  });
+
+  return { ok: true, recipes };
+}
+
+export async function saveRecipeAction(input: SaveRecipeInput) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId, user } = auth.context;
+
+  if (!input.name || typeof input.name !== "string" || !input.name.trim()) {
+    return { ok: false, error: "Recipe name is required." };
+  }
+
+  if (!input.menu_item_id || typeof input.menu_item_id !== "string") {
+    return { ok: false, error: "Menu item selection is required." };
+  }
+
+  const yieldQty = Number(input.yield_quantity);
+  if (isNaN(yieldQty) || yieldQty <= 0) {
+    return { ok: false, error: "Yield quantity must be greater than zero." };
+  }
+
+  if (!Array.isArray(input.ingredients) || input.ingredients.length === 0) {
+    return { ok: false, error: "A recipe must contain at least one ingredient." };
+  }
+
+  // 1. Verify menu item belongs to active restaurant
+  const { data: menuItem, error: miError } = await supabase
+    .from("menu_items")
+    .select("id")
+    .eq("id", input.menu_item_id)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (miError || !menuItem) {
+    return { ok: false, error: "Selected menu item does not belong to your restaurant." };
+  }
+
+  const isActive = input.is_active !== false;
+
+  // 2. If recipe is set to active, verify no OTHER active recipe exists for this menu_item_id
+  if (isActive) {
+    let query = supabase
+      .from("recipe_headers")
+      .select("id")
+      .eq("restaurant_id", restaurantId)
+      .eq("menu_item_id", input.menu_item_id)
+      .eq("is_active", true);
+
+    if (input.id) {
+      query = query.neq("id", input.id);
+    }
+
+    const { data: existingActive } = await query;
+    if (existingActive && existingActive.length > 0) {
+      return { ok: false, error: "An active recipe already exists for this menu item." };
+    }
+  }
+
+  // 3. Verify ingredients belong to tenant and check for duplicate inventory items
+  const invIds = new Set<string>();
+  for (const ing of input.ingredients) {
+    if (!ing.inventory_item_id || typeof ing.inventory_item_id !== "string") {
+      return { ok: false, error: "Invalid ingredient selected." };
+    }
+    if (invIds.has(ing.inventory_item_id)) {
+      return { ok: false, error: "Duplicate inventory items are not allowed in the same recipe." };
+    }
+    invIds.add(ing.inventory_item_id);
+
+    const ingQty = Number(ing.quantity);
+    if (isNaN(ingQty) || ingQty <= 0) {
+      return { ok: false, error: "Ingredient quantity must be greater than zero." };
+    }
+  }
+
+  // Verify all inventory items belong to active restaurant and are active
+  const { data: invItems, error: invError } = await supabase
+    .from("inventory_items")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .eq("is_active", true)
+    .in("id", Array.from(invIds));
+
+  if (invError || !invItems || invItems.length !== invIds.size) {
+    return { ok: false, error: "One or more ingredients do not exist or are inactive in your restaurant." };
+  }
+
+  // 4. Save Recipe Header (Insert or Update)
+  let recipeId = input.id;
+  if (recipeId) {
+    const { error: updateErr } = await supabase
+      .from("recipe_headers")
+      .update({
+        name: input.name.trim(),
+        yield_quantity: yieldQty,
+        yield_unit: input.yield_unit?.trim() || "portion",
+        is_active: isActive,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id,
+      })
+      .eq("id", recipeId)
+      .eq("restaurant_id", restaurantId);
+
+    if (updateErr) return { ok: false, error: updateErr.message };
+  } else {
+    const { data: newHeader, error: insertErr } = await supabase
+      .from("recipe_headers")
+      .insert({
+        restaurant_id: restaurantId,
+        menu_item_id: input.menu_item_id,
+        name: input.name.trim(),
+        yield_quantity: yieldQty,
+        yield_unit: input.yield_unit?.trim() || "portion",
+        is_active: isActive,
+        created_by: user.id,
+        updated_by: user.id,
+      })
+      .select("id")
+      .single();
+
+    if (insertErr || !newHeader) return { ok: false, error: insertErr?.message || "Failed to create recipe header" };
+    recipeId = newHeader.id;
+  }
+
+  // 5. Replace ingredients atomically
+  if (input.id) {
+    await supabase.from("recipe_ingredients").delete().eq("recipe_id", recipeId);
+  }
+
+  const ingredientRows = input.ingredients.map((ing) => ({
+    restaurant_id: restaurantId,
+    recipe_id: recipeId!,
+    inventory_item_id: ing.inventory_item_id,
+    quantity: Number(ing.quantity),
+    unit: String(ing.unit || "kg").trim(),
+  }));
+
+  const { error: ingInsertErr } = await supabase.from("recipe_ingredients").insert(ingredientRows);
+
+  if (ingInsertErr) {
+    return { ok: false, error: ingInsertErr.message };
+  }
+
+  revalidatePath("/admin/recipes");
+  revalidatePath("/admin/menu");
+  revalidatePath("/admin/inventory");
+
+  return { ok: true, recipe_id: recipeId };
+}
+
+export async function toggleRecipeActiveAction(recipeId: string, isActive: boolean) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId, user } = auth.context;
+
+  if (isActive) {
+    const { data: recipe } = await supabase
+      .from("recipe_headers")
+      .select("menu_item_id")
+      .eq("id", recipeId)
+      .eq("restaurant_id", restaurantId)
+      .single();
+
+    if (recipe) {
+      const { data: existingActive } = await supabase
+        .from("recipe_headers")
+        .select("id")
+        .eq("restaurant_id", restaurantId)
+        .eq("menu_item_id", recipe.menu_item_id)
+        .eq("is_active", true)
+        .neq("id", recipeId);
+
+      if (existingActive && existingActive.length > 0) {
+        return { ok: false, error: "Another active recipe already exists for this menu item." };
+      }
+    }
+  }
+
+  const { error } = await supabase
+    .from("recipe_headers")
+    .update({ is_active: isActive, updated_by: user.id, updated_at: new Date().toISOString() })
+    .eq("id", recipeId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/recipes");
+  revalidatePath("/admin/menu");
+  return { ok: true };
+}
+
+export async function deleteRecipeAction(recipeId: string) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { error } = await supabase
+    .from("recipe_headers")
+    .delete()
+    .eq("id", recipeId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/recipes");
+  revalidatePath("/admin/menu");
+  return { ok: true };
 }
