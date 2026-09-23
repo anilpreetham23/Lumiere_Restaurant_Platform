@@ -651,9 +651,42 @@ export async function updateSessionOrderStatus(
 
   if (error) return { ok: false, error: error.message };
 
+  if (status === "served") {
+    const { data: consumeRes, error: consumeErr } = await supabase.rpc("consume_order_inventory", {
+      p_order_id: id,
+      p_user_id: auth.context.user.id,
+    });
+    if (consumeErr) {
+      console.error("Failed to execute automatic inventory consumption:", consumeErr);
+    }
+  }
+
   revalidatePath("/admin/kitchen");
   revalidatePath("/admin/floor");
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin/inventory");
   return { ok: true };
+}
+
+export async function retryOrderInventoryConsumptionAction(orderId: string) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user } = auth.context;
+
+  const { data, error } = await supabase.rpc("consume_order_inventory", {
+    p_order_id: orderId,
+    p_user_id: user.id,
+  });
+
+  if (error || !data) {
+    return { ok: false, error: error?.message || "Failed to process inventory consumption." };
+  }
+
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin/inventory");
+  revalidatePath("/admin/kitchen");
+
+  return { ok: true as const, result: data };
 }
 
 export async function cancelSessionOrder(

@@ -26,9 +26,11 @@ import {
   DollarSign,
   Info,
   Plus,
+  Layers,
+  Loader2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { getAdminOrders, cancelSessionOrder, type GetAdminOrdersParams } from "@/actions/admin";
+import { getAdminOrders, cancelSessionOrder, retryOrderInventoryConsumptionAction, type GetAdminOrdersParams } from "@/actions/admin";
 import { getActiveRestaurantId } from "@/actions/tenant";
 import { StaffOrderModal } from "@/components/admin/StaffOrderModal";
 
@@ -55,6 +57,9 @@ type AdminOrder = {
   prep_started_at?: string | null;
   prep_completed_at?: string | null;
   target_prep_minutes?: number | null;
+  inventory_consumed_at?: string | null;
+  inventory_consumption_status?: string | null;
+  inventory_consumption_notes?: string | null;
   dining_sessions?: {
     customer_name?: string | null;
     phone?: string | null;
@@ -171,6 +176,9 @@ export default function AdminOrdersPage() {
   const [cancelReason, setCancelReason] = useState<string>("");
   const [cancelLoading, setCancelLoading] = useState<boolean>(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Inventory Retry State
+  const [retryingInventory, setRetryingInventory] = useState<boolean>(false);
 
   // Debounce search input
   useEffect(() => {
@@ -569,12 +577,31 @@ export default function AdminOrdersPage() {
 
                       {/* Status */}
                       <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium ${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`}
-                        >
-                          <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotBg}`} />
-                          {statusCfg.label}
-                        </span>
+                        <div className="flex flex-col gap-1 items-start">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium ${statusCfg.bg} ${statusCfg.text} ${statusCfg.border}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotBg}`} />
+                            {statusCfg.label}
+                          </span>
+                          {order.status === "served" && (
+                            <span
+                              className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                order.inventory_consumption_status === "consumed"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                                  : order.inventory_consumption_status === "insufficient_stock"
+                                  ? "bg-rose-50 text-rose-700 border-rose-300"
+                                  : "bg-amber-50 text-amber-700 border-amber-300"
+                              }`}
+                            >
+                              {order.inventory_consumption_status === "consumed"
+                                ? "Stock Consumed"
+                                : order.inventory_consumption_status === "insufficient_stock"
+                                ? "Low Stock"
+                                : "Missing Recipe"}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Source */}
@@ -797,6 +824,66 @@ export default function AdminOrdersPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Inventory Consumption Status Card */}
+              {selectedOrder.status === "served" && (
+                <div className="p-4 bg-neutral-50 rounded-xl border border-cream2 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs uppercase font-semibold text-neutral-500 tracking-wider flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-gold" />
+                      Inventory Consumption
+                    </h3>
+                    {selectedOrder.inventory_consumption_status === "consumed" && (
+                      <span className="text-[10px] uppercase font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
+                        Stock Consumed
+                      </span>
+                    )}
+                    {selectedOrder.inventory_consumption_status === "consumed_with_missing_recipes" && (
+                      <span className="text-[10px] uppercase font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-300">
+                        Partial (Missing Recipes)
+                      </span>
+                    )}
+                    {selectedOrder.inventory_consumption_status === "insufficient_stock" && (
+                      <span className="text-[10px] uppercase font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full border border-rose-300">
+                        Insufficient Stock
+                      </span>
+                    )}
+                    {(selectedOrder.inventory_consumption_status === "no_active_recipes" || selectedOrder.inventory_consumption_status === "missing_recipes_only") && (
+                      <span className="text-[10px] uppercase font-bold bg-neutral-200 text-neutral-700 px-2 py-0.5 rounded-full border border-neutral-300">
+                        No Recipe Configured
+                      </span>
+                    )}
+                  </div>
+
+                  {selectedOrder.inventory_consumption_notes && (
+                    <p className="text-xs text-neutral-600 bg-white p-2.5 rounded-lg border border-cream2 font-mono">
+                      {selectedOrder.inventory_consumption_notes}
+                    </p>
+                  )}
+
+                  {(selectedOrder.inventory_consumption_status === "insufficient_stock" ||
+                    selectedOrder.inventory_consumption_status === "missing_recipes_only" ||
+                    selectedOrder.inventory_consumption_status === "no_active_recipes") && (
+                    <button
+                      onClick={async () => {
+                        setRetryingInventory(true);
+                        const res = await retryOrderInventoryConsumptionAction(selectedOrder.id);
+                        setRetryingInventory(false);
+                        if (res.ok) {
+                          await loadOrders();
+                        } else {
+                          alert(res.error || "Inventory consumption failed.");
+                        }
+                      }}
+                      disabled={retryingInventory}
+                      className="w-full bg-wine hover:bg-wine-dark text-white rounded-lg py-2 px-3 text-xs font-semibold transition shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                    >
+                      {retryingInventory ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+                      Process / Retry Inventory Consumption
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Order Items Breakdown */}
               <div className="space-y-3">

@@ -55,6 +55,9 @@ export type SessionOrder = {
   started_at?: string | null;
   completed_at?: string | null;
   target_prep_mins?: number | null;
+  inventory_consumed_at?: string | null;
+  inventory_consumption_status?: string | null;
+  inventory_consumption_notes?: string | null;
 };
 
 export type DiningSession = {

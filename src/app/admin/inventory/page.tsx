@@ -19,7 +19,8 @@ import {
   History,
   TrendingDown,
   PackageCheck,
-  Scale
+  Scale,
+  Layers
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -54,6 +55,7 @@ type StockMovement = {
   previous_quantity: number;
   resulting_quantity: number;
   reason: string | null;
+  order_id?: string | null;
   created_by: string | null;
   created_at: string;
 };
@@ -852,6 +854,7 @@ export default function InventoryAdminPage() {
                     const targetItem = itemMap[m.inventory_item_id];
                     const isAdd = m.type === "IN";
                     const isRemove = m.type === "OUT";
+                    const isOrderConsumption = Boolean(m.order_id || (m.reason && m.reason.toLowerCase().includes("order #")));
 
                     return (
                       <tr key={m.id} className="hover:bg-cream/30 transition-colors">
@@ -864,14 +867,16 @@ export default function InventoryAdminPage() {
                         <td className="py-3 px-4">
                           <span
                             className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              isAdd
+                              isOrderConsumption
+                                ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                : isAdd
                                 ? "bg-emerald-100 text-emerald-800"
                                 : isRemove
                                 ? "bg-red-100 text-red-800"
                                 : "bg-indigo-100 text-indigo-800"
                             }`}
                           >
-                            {m.type}
+                            {isOrderConsumption ? "ORDER OUT" : m.type}
                           </span>
                         </td>
                         <td className="py-3 px-4 font-bold text-sm">
@@ -881,7 +886,14 @@ export default function InventoryAdminPage() {
                           {m.previous_quantity} {targetItem?.unit || ""} → <b className="text-ink">{m.resulting_quantity} {targetItem?.unit || ""}</b>
                         </td>
                         <td className="py-3 px-4 text-neutral-600 font-sans">
-                          {m.reason || "—"}
+                          {isOrderConsumption ? (
+                            <span className="inline-flex items-center gap-1 text-blue-900 font-medium">
+                              <Layers size={12} className="text-blue-600" />
+                              {m.reason}
+                            </span>
+                          ) : (
+                            m.reason || "—"
+                          )}
                         </td>
                       </tr>
                     );
