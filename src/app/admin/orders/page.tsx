@@ -25,10 +25,12 @@ import {
   Store,
   DollarSign,
   Info,
+  Plus,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { getAdminOrders, cancelSessionOrder, type GetAdminOrdersParams } from "@/actions/admin";
 import { getActiveRestaurantId } from "@/actions/tenant";
+import { StaffOrderModal } from "@/components/admin/StaffOrderModal";
 
 type AdminOrder = {
   id: string;
@@ -160,6 +162,9 @@ export default function AdminOrdersPage() {
 
   // Detail Drawer state
   const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
+
+  // Staff POS Order Modal state
+  const [showPosModal, setShowPosModal] = useState<boolean>(false);
 
   // Cancel Order Modal state
   const [cancelModalOrder, setCancelModalOrder] = useState<AdminOrder | null>(null);
@@ -318,13 +323,22 @@ export default function AdminOrdersPage() {
           </p>
         </div>
 
-        <button
-          onClick={loadOrders}
-          className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-neutral-700 bg-white border border-cream2 rounded-lg shadow-sm hover:bg-neutral-50 transition"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowPosModal(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-wine hover:bg-wine-dark rounded-lg shadow-sm transition"
+          >
+            <Plus className="w-4 h-4" />
+            + New Order
+          </button>
+          <button
+            onClick={loadOrders}
+            className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-neutral-700 bg-white border border-cream2 rounded-lg shadow-sm hover:bg-neutral-50 transition"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Metrics Header Summary */}
@@ -986,6 +1000,13 @@ export default function AdminOrdersPage() {
           </div>
         </div>
       )}
+
+      {/* Staff POS Order Creation Modal */}
+      <StaffOrderModal
+        isOpen={showPosModal}
+        onClose={() => setShowPosModal(false)}
+        onSuccess={loadOrders}
+      />
     </div>
   );
 }

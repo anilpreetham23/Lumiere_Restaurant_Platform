@@ -16,7 +16,8 @@ import {
   MapPin,
   Loader2,
   DollarSign,
-  AlertCircle
+  AlertCircle,
+  ShoppingBag
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { money } from "@/data/menu";
@@ -28,6 +29,7 @@ import {
   type AddTableInput
 } from "@/actions/admin";
 import { getActiveRestaurantId } from "@/actions/tenant";
+import { StaffOrderModal, type TableInfo } from "@/components/admin/StaffOrderModal";
 
 type TableRow = {
   id: string;
@@ -74,6 +76,10 @@ export default function FloorPage() {
   // QR Modal State
   const [qrTable, setQrTable] = useState<{ table: TableRow; dataUrl: string; fullUrl: string } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Staff POS Order Modal State
+  const [showPosModal, setShowPosModal] = useState(false);
+  const [posTable, setPosTable] = useState<TableRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -256,8 +262,17 @@ export default function FloorPage() {
 
         <div className="flex items-center gap-3">
           <button
+            onClick={() => {
+              setPosTable(null);
+              setShowPosModal(true);
+            }}
+            className="btn-wine text-xs py-2 px-4 shadow-xs flex items-center gap-1.5"
+          >
+            <ShoppingBag size={14} /> + Take Order
+          </button>
+          <button
             onClick={() => setShowAddModal(true)}
-            className="btn-wine text-xs py-2 px-4 shadow-xs"
+            className="btn-outline text-xs py-2 px-3 shadow-xs flex items-center gap-1.5"
           >
             <Plus size={16} /> Add Table
           </button>
@@ -413,6 +428,16 @@ export default function FloorPage() {
 
                         {/* State Actions */}
                         <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setPosTable(t);
+                              setShowPosModal(true);
+                            }}
+                            className="text-xs px-2.5 py-1 rounded-full bg-wine/10 hover:bg-wine hover:text-white text-wine font-semibold transition-colors border border-wine/20 flex items-center gap-1"
+                            title="Take POS Order"
+                          >
+                            <ShoppingBag size={13} /> Take Order
+                          </button>
                           {sess ? (
                             <button
                               onClick={() => act(() => settleSession(sess.id, "cash"), t.id)}
@@ -468,10 +493,21 @@ export default function FloorPage() {
                       >
                         {style.label}
                       </span>
-                      <div className="mt-2.5 flex items-center justify-center gap-1">
+                      <div className="mt-2.5 flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setPosTable(t);
+                            setShowPosModal(true);
+                          }}
+                          className="px-2 py-1 rounded-md bg-wine text-white text-[11px] font-bold flex items-center gap-1 hover:bg-wine-dark transition"
+                          title="Take POS Order"
+                        >
+                          <ShoppingBag size={12} /> Order
+                        </button>
                         <button
                           onClick={() => openQrModal(t)}
                           className="p-1 rounded bg-white border text-neutral-600 hover:text-wine"
+                          title="QR Code"
                         >
                           <QrCode size={13} />
                         </button>
@@ -665,6 +701,28 @@ export default function FloorPage() {
           </div>
         </div>
       )}
+
+      {/* STAFF / POS ORDER CREATION MODAL */}
+      <StaffOrderModal
+        isOpen={showPosModal}
+        onClose={() => {
+          setShowPosModal(false);
+          setPosTable(null);
+        }}
+        selectedTable={
+          posTable
+            ? {
+                id: posTable.id,
+                label: posTable.label,
+                section: posTable.section,
+                seats: posTable.seats,
+                state: posTable.state,
+                current_session_id: posTable.current_session_id,
+              }
+            : null
+        }
+        onSuccess={load}
+      />
     </div>
   );
 }
