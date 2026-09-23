@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/tenant";
+import type { CreateStaffOrderInput } from "@/lib/order";
 
 export async function setReservationStatus(id: string, status: string) {
   const auth = await requireRole(["owner", "manager", "staff"]);
@@ -1072,3 +1073,42 @@ export async function getAdminOrders(params: GetAdminOrdersParams = {}) {
   };
 }
 
+export async function createStaffOrderAction(input: CreateStaffOrderInput) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase } = auth.context;
+
+  if (!input.table_id || typeof input.table_id !== "string") {
+    return { ok: false, error: "Table ID is required" };
+  }
+
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return { ok: false, error: "Order items cannot be empty" };
+  }
+
+  // Sanitize item payload: only send menu_item_id, qty, notes
+  const sanitizedItems = input.items.map((it) => ({
+    menu_item_id: String(it.menu_item_id || ""),
+    qty: Number(it.qty || 1),
+    notes: it.notes ? String(it.notes).trim() : null,
+  }));
+
+  const { data, error } = await supabase.rpc("create_staff_order", {
+    p_table_id: input.table_id,
+    p_items: sanitizedItems,
+    p_customer_name: input.customer_name?.trim() || null,
+    p_phone: input.phone?.trim() || null,
+    p_notes: input.notes?.trim() || null,
+    p_source: input.source?.trim() || "pos_manual",
+  });
+
+  if (error || !data || !data.ok) {
+    return { ok: false, error: error?.message || data?.error || "Failed to create staff order" };
+  }
+
+  revalidatePath("/admin/floor");
+  revalidatePath("/admin/orders");
+  revalidatePath("/admin/kitchen");
+
+  return { ok: true as const, result: data };
+}

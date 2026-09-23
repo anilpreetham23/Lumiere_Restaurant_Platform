@@ -98,3 +98,17 @@ export function sessionTotal(orders: SessionOrder[]): number {
     .reduce((s, o) => s + Number(o.total ?? o.amount), 0);
 }
 
+export type StaffOrderItemInput = {
+  menu_item_id: string;
+  qty: number;
+  notes?: string;
+};
+
+export type CreateStaffOrderInput = {
+  table_id: string;
+  items: StaffOrderItemInput[];
+  customer_name?: string;
+  phone?: string;
+  notes?: string;
+  source?: OrderSource;
+};
