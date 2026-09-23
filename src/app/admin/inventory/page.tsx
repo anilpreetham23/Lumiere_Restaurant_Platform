@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Boxes,
   Plus,
@@ -774,12 +775,20 @@ export default function InventoryAdminPage() {
                       Reorder Threshold: <b>{it.reorder_level} {it.unit}</b>
                     </div>
 
-                    <button
-                      onClick={() => openMovementModal(it, "IN")}
-                      className="w-full btn-wine py-2 text-xs font-bold shadow-xs flex items-center justify-center gap-1.5"
-                    >
-                      <Plus size={14} /> Replenish Stock
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openMovementModal(it, "IN")}
+                        className="flex-1 btn-wine py-2 text-xs font-bold shadow-xs flex items-center justify-center gap-1.5"
+                      >
+                        <Plus size={14} /> Replenish
+                      </button>
+                      <Link
+                        href={`/admin/purchasing?action=new_po&inventory_item_id=${it.id}`}
+                        className="btn-outline py-2 px-3 text-xs font-semibold flex items-center gap-1 hover:text-wine"
+                      >
+                        Create PO →
+                      </Link>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -813,12 +822,20 @@ export default function InventoryAdminPage() {
                       <span className="text-neutral-500">Reorder at: {it.reorder_level} {it.unit}</span>
                     </div>
 
-                    <button
-                      onClick={() => openMovementModal(it, "IN")}
-                      className="w-full bg-amber-500 hover:bg-amber-600 text-white rounded-xl py-2 px-3 text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5"
-                    >
-                      <Plus size={14} /> Add Stock
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openMovementModal(it, "IN")}
+                        className="flex-1 bg-amber-500 hover:bg-amber-600 text-white rounded-xl py-2 px-3 text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5"
+                      >
+                        <Plus size={14} /> Add Stock
+                      </button>
+                      <Link
+                        href={`/admin/purchasing?action=new_po&inventory_item_id=${it.id}`}
+                        className="btn-outline py-2 px-3 text-xs font-semibold flex items-center gap-1 hover:text-wine bg-white"
+                      >
+                        Create PO →
+                      </Link>
+                    </div>
                   </div>
                 ))}
               </div>

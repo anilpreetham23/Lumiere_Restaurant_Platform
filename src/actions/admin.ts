@@ -1414,3 +1414,382 @@ export async function deleteRecipeAction(recipeId: string) {
   revalidatePath("/admin/menu");
   return { ok: true };
 }
+
+// ---------- SUPPLIERS & PURCHASING ----------
+
+export async function getSuppliers() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data, error } = await supabase
+    .from("suppliers")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .order("name", { ascending: true });
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true as const, suppliers: data || [] };
+}
+
+export async function saveSupplierAction(input: {
+  id?: string;
+  name: string;
+  contact_person?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  is_active?: boolean;
+}) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const name = input.name?.trim();
+  if (!name) {
+    return { ok: false, error: "Supplier name is required." };
+  }
+
+  const payload = {
+    name,
+    contact_person: input.contact_person?.trim() || null,
+    phone: input.phone?.trim() || null,
+    email: input.email?.trim() || null,
+    address: input.address?.trim() || null,
+    notes: input.notes?.trim() || null,
+    is_active: input.is_active !== false,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.id) {
+    const { error } = await supabase
+      .from("suppliers")
+      .update(payload)
+      .eq("id", input.id)
+      .eq("restaurant_id", restaurantId);
+
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { error } = await supabase.from("suppliers").insert({
+      ...payload,
+      restaurant_id: restaurantId,
+    });
+
+    if (error) return { ok: false, error: error.message };
+  }
+
+  revalidatePath("/admin/purchasing");
+  revalidatePath("/admin/inventory");
+  return { ok: true };
+}
+
+export async function toggleSupplierActiveAction(supplierId: string, isActive: boolean) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { error } = await supabase
+    .from("suppliers")
+    .update({ is_active: isActive, updated_at: new Date().toISOString() })
+    .eq("id", supplierId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/purchasing");
+  return { ok: true };
+}
+
+export async function getPurchaseOrders() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data, error } = await supabase
+    .from("purchase_orders")
+    .select(`
+      id,
+      restaurant_id,
+      po_number,
+      supplier_id,
+      status,
+      order_date,
+      expected_date,
+      notes,
+      subtotal,
+      tax,
+      total,
+      created_by,
+      created_at,
+      updated_at,
+      suppliers(id, name, contact_person, phone, email),
+      purchase_order_items(
+        id,
+        restaurant_id,
+        po_id,
+        inventory_item_id,
+        ordered_quantity,
+        received_quantity,
+        unit,
+        unit_cost,
+        line_total,
+        inventory_items(id, name, sku, category, unit, quantity, cost_per_unit)
+      )
+    `)
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true as const, purchaseOrders: data || [] };
+}
+
+export async function savePurchaseOrderAction(input: {
+  id?: string;
+  supplier_id: string;
+  expected_date?: string | null;
+  notes?: string | null;
+  items: Array<{
+    inventory_item_id: string;
+    ordered_quantity: number;
+    unit: string;
+    unit_cost: number;
+  }>;
+  status?: "draft" | "ordered";
+}) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId, user } = auth.context;
+
+  if (!input.supplier_id) {
+    return { ok: false, error: "Supplier selection is required." };
+  }
+
+  // 1. Verify supplier belongs to active tenant
+  const { data: supplier, error: supErr } = await supabase
+    .from("suppliers")
+    .select("id, is_active")
+    .eq("id", input.supplier_id)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (supErr || !supplier) {
+    return { ok: false, error: "Selected supplier does not belong to your restaurant." };
+  }
+
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return { ok: false, error: "Purchase order must contain at least one item." };
+  }
+
+  // 2. Validate inventory items belong to tenant & calculate line totals
+  const invIds = new Set<string>();
+  let subtotal = 0;
+  const validatedItems: Array<{
+    inventory_item_id: string;
+    ordered_quantity: number;
+    unit: string;
+    unit_cost: number;
+    line_total: number;
+  }> = [];
+
+  for (const it of input.items) {
+    if (!it.inventory_item_id) {
+      return { ok: false, error: "Invalid inventory item selected." };
+    }
+    if (invIds.has(it.inventory_item_id)) {
+      return { ok: false, error: "Duplicate inventory items in the same PO are not allowed." };
+    }
+    invIds.add(it.inventory_item_id);
+
+    const qty = Number(it.ordered_quantity);
+    if (isNaN(qty) || qty <= 0) {
+      return { ok: false, error: "Item ordered quantity must be greater than zero." };
+    }
+
+    const cost = Number(it.unit_cost);
+    if (isNaN(cost) || cost < 0) {
+      return { ok: false, error: "Item unit cost cannot be negative." };
+    }
+
+    const lineTotal = Math.round(qty * cost * 100) / 100;
+    subtotal += lineTotal;
+
+    validatedItems.push({
+      inventory_item_id: it.inventory_item_id,
+      ordered_quantity: qty,
+      unit: String(it.unit || "kg").trim(),
+      unit_cost: cost,
+      line_total: lineTotal,
+    });
+  }
+
+  // Verify all inventory items belong to tenant & are active
+  const { data: invItems, error: invErr } = await supabase
+    .from("inventory_items")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .eq("is_active", true)
+    .in("id", Array.from(invIds));
+
+  if (invErr || !invItems || invItems.length !== invIds.size) {
+    return { ok: false, error: "One or more inventory items do not exist or are inactive in your restaurant." };
+  }
+
+  subtotal = Math.round(subtotal * 100) / 100;
+  const total = subtotal; // Tax can be extended if needed
+
+  let poId = input.id;
+  let poNumber: number;
+
+  if (poId) {
+    // Verify existing PO is in draft status
+    const { data: existingPO, error: fetchErr } = await supabase
+      .from("purchase_orders")
+      .select("id, status, po_number")
+      .eq("id", poId)
+      .eq("restaurant_id", restaurantId)
+      .single();
+
+    if (fetchErr || !existingPO) return { ok: false, error: "Purchase order not found." };
+    if (existingPO.status !== "draft") {
+      return { ok: false, error: "Only draft purchase orders can be edited." };
+    }
+
+    poNumber = existingPO.po_number;
+
+    const { error: updateErr } = await supabase
+      .from("purchase_orders")
+      .update({
+        supplier_id: input.supplier_id,
+        expected_date: input.expected_date || null,
+        notes: input.notes?.trim() || null,
+        status: input.status || "draft",
+        subtotal,
+        total,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", poId)
+      .eq("restaurant_id", restaurantId);
+
+    if (updateErr) return { ok: false, error: updateErr.message };
+
+    // Replace items
+    await supabase.from("purchase_order_items").delete().eq("po_id", poId);
+  } else {
+    // Generate sequential PO number via restaurant_po_counters
+    const { data: counter, error: counterErr } = await supabase
+      .from("restaurant_po_counters")
+      .select("last_po_number")
+      .eq("restaurant_id", restaurantId)
+      .single();
+
+    let lastNum = counter?.last_po_number ? Number(counter.last_po_number) : 5000;
+    poNumber = lastNum + 1;
+
+    await supabase.from("restaurant_po_counters").upsert({
+      restaurant_id: restaurantId,
+      last_po_number: poNumber,
+      updated_at: new Date().toISOString(),
+    });
+
+    const { data: newPO, error: insertErr } = await supabase
+      .from("purchase_orders")
+      .insert({
+        restaurant_id: restaurantId,
+        po_number: poNumber,
+        supplier_id: input.supplier_id,
+        status: input.status || "draft",
+        expected_date: input.expected_date || null,
+        notes: input.notes?.trim() || null,
+        subtotal,
+        total,
+        created_by: user.id,
+      })
+      .select("id")
+      .single();
+
+    if (insertErr || !newPO) return { ok: false, error: insertErr?.message || "Failed to create purchase order." };
+    poId = newPO.id;
+  }
+
+  // Insert PO line items
+  const itemRows = validatedItems.map((it) => ({
+    restaurant_id: restaurantId,
+    po_id: poId!,
+    inventory_item_id: it.inventory_item_id,
+    ordered_quantity: it.ordered_quantity,
+    received_quantity: 0,
+    unit: it.unit,
+    unit_cost: it.unit_cost,
+    line_total: it.line_total,
+  }));
+
+  const { error: itemInsertErr } = await supabase.from("purchase_order_items").insert(itemRows);
+  if (itemInsertErr) return { ok: false, error: itemInsertErr.message };
+
+  revalidatePath("/admin/purchasing");
+  revalidatePath("/admin/inventory");
+  return { ok: true, po_id: poId, po_number: poNumber };
+}
+
+export async function updatePOStatusAction(poId: string, newStatus: "ordered" | "cancelled") {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data: po, error: fetchErr } = await supabase
+    .from("purchase_orders")
+    .select("id, status")
+    .eq("id", poId)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (fetchErr || !po) return { ok: false, error: "Purchase order not found." };
+
+  if (po.status === "received" || po.status === "partially_received") {
+    return { ok: false, error: "Cannot change status of a received or partially received purchase order." };
+  }
+
+  if (po.status === "cancelled") {
+    return { ok: false, error: "Purchase order is already cancelled." };
+  }
+
+  const { error } = await supabase
+    .from("purchase_orders")
+    .update({ status: newStatus, updated_at: new Date().toISOString() })
+    .eq("id", poId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/purchasing");
+  return { ok: true };
+}
+
+export async function receivePOSourceStockAction(poId: string, items: Array<{ po_item_id: string; receive_qty: number }>) {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, user } = auth.context;
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return { ok: false, error: "No items specified for receiving." };
+  }
+
+  const { data, error } = await supabase.rpc("receive_purchase_order_stock", {
+    p_po_id: poId,
+    p_items: items,
+    p_user_id: user.id,
+  });
+
+  if (error || !data) {
+    return { ok: false, error: error?.message || "Failed to receive stock." };
+  }
+
+  if (data.ok === false) {
+    return { ok: false, error: data.message || data.error || "Failed to receive stock." };
+  }
+
+  revalidatePath("/admin/purchasing");
+  revalidatePath("/admin/inventory");
+  return { ok: true as const, result: data };
+}
