@@ -92,7 +92,6 @@ export default function KitchenPage() {
         .eq("restaurant_id", restaurantId)
         .neq("status", "served")
         .neq("status", "cancelled")
-
         .order("created_at", { ascending: true }),
       supabase
         .from("dining_sessions")
@@ -111,7 +110,15 @@ export default function KitchenPage() {
         .order("created_at", { ascending: true }),
     ]);
 
-    setOrders((o.data ?? []) as SessionOrder[]);
+    // Exclude unapproved marketplace orders (swiggy / zomato in 'placed' status)
+    const rawOrders = (o.data ?? []) as SessionOrder[];
+    const activeOrders = rawOrders.filter((ord) => {
+      const isMarketplace = ord.source === "swiggy" || ord.source === "zomato";
+      if (isMarketplace && ord.status === "placed") return false;
+      return true;
+    });
+
+    setOrders(activeOrders);
     setSessions((s.data ?? []) as SessionRow[]);
     setTables((t.data ?? []) as TableRow[]);
     setReqs((r.data ?? []) as Req[]);
@@ -134,7 +141,13 @@ export default function KitchenPage() {
   const tableOfSession = useMemo(() => {
     const sMap = Object.fromEntries(sessions.map((s) => [s.id, s.table_id]));
     const tMap = Object.fromEntries(tables.map((t) => [t.id, t.label]));
-    return (sessionId: string) => tMap[sMap[sessionId]] ?? "Table —";
+    return (sessionId: string | null, source?: string) => {
+      if (source === "swiggy" || source === "zomato") {
+        return "Online Delivery";
+      }
+      if (!sessionId) return "Delivery / Takeaway";
+      return tMap[sMap[sessionId]] ?? "Table —";
+    };
   }, [sessions, tables]);
 
   const tableOfId = useCallback(
@@ -286,14 +299,16 @@ export default function KitchenPage() {
           <Utensils size={36} className="mx-auto text-neutral-300" />
           <h3 className="font-serif text-lg font-semibold text-ink">No active kitchen orders</h3>
           <p className="text-xs text-neutral-500 max-w-sm mx-auto">
-            When guests place orders from their table QR code or waiter app, they will appear here live.
+            When guests place orders from their table QR code, waiter app, or when online orders are accepted, they will appear here live.
           </p>
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {displayedOrders.map((o) => {
             const config = STATE_CONFIG[o.status] || STATE_CONFIG.placed;
-            const tableLabel = tableOfSession(o.session_id);
+            const tableLabel = tableOfSession(o.session_id, o.source);
+            const isSwiggy = o.source === "swiggy";
+            const isZomato = o.source === "zomato";
 
             // Preparation Time Calculation
             const targetMins = o.target_prep_mins || 20;
@@ -330,14 +345,26 @@ export default function KitchenPage() {
                 <div>
                   <div className={`px-4 py-2.5 flex items-center justify-between font-bold text-xs ${config.headerBg}`}>
                     <span className="tracking-wide uppercase font-mono">{config.label}</span>
-                    <span className="font-mono opacity-90">#{o.id.slice(-4).toUpperCase()}</span>
+                    <span className="font-mono opacity-90">#{o.order_number || o.id.slice(-4).toUpperCase()}</span>
                   </div>
 
                   <div className="p-4 space-y-3">
                     {/* Table & Timestamp Header */}
                     <div className="flex items-start justify-between border-b border-cream2 pb-2.5">
                       <div>
-                        <div className="font-serif text-2xl font-bold text-ink">{tableLabel}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-serif text-xl font-bold text-ink">{tableLabel}</span>
+                          {isSwiggy && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-orange-100 text-orange-800 border border-orange-300">
+                              🟠 Swiggy
+                            </span>
+                          )}
+                          {isZomato && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                              🔴 Zomato
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-neutral-400 mt-0.5">
                           Ordered at {new Date(o.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                         </div>
@@ -382,7 +409,7 @@ export default function KitchenPage() {
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-xs text-amber-900 flex items-start gap-1.5">
                         <AlertTriangle size={14} className="shrink-0 text-amber-600 mt-0.5" />
                         <div>
-                          <b className="font-semibold block">Kitchen Note:</b>
+                          <b className="font-semibold block">Order Note:</b>
                           {o.notes}
                         </div>
                       </div>

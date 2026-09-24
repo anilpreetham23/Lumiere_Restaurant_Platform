@@ -2879,3 +2879,335 @@ export async function revokeStaffInvitationAdminAction(invitationId: string) {
   revalidatePath("/admin/staff");
   return { ok: true };
 }
+
+// ============================================================
+// MARKETPLACE ORDERS (SWIGGY / ZOMATO) SERVER ACTIONS
+// ============================================================
+
+export type MarketplaceOrder = {
+  id: string;
+  restaurant_id: string;
+  order_number: number;
+  external_order_id: string | null;
+  source: "swiggy" | "zomato" | string;
+  status: "placed" | "accepted" | "preparing" | "ready" | "served" | "cancelled";
+  marketplace_status?: string | null;
+  items: any;
+  subtotal: number;
+  tax: number;
+  service_charge: number;
+  discount: number;
+  total: number;
+  amount: number;
+  notes?: string | null;
+  customer_name?: string | null;
+  phone?: string | null;
+  created_at: string;
+  accepted_at?: string | null;
+  accepted_by?: string | null;
+  rejected_at?: string | null;
+  rejected_by?: string | null;
+  rejection_reason?: string | null;
+  cancellation_reason?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+};
+
+export async function getOnlineOrdersAdminAction() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error, data: [], pendingCount: 0 };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data, error } = await supabase
+    .from("session_orders")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .in("source", ["swiggy", "zomato"])
+    .order("created_at", { ascending: false });
+
+  if (error) return { ok: false, error: error.message, data: [], pendingCount: 0 };
+
+  const orders: MarketplaceOrder[] = (data || []).map((o: any) => {
+    let customerName = "Marketplace Customer";
+    let phone: string | null = null;
+    if (o.notes && typeof o.notes === "string") {
+      const matchName = o.notes.match(/Customer:\s*([^,|]+)/i);
+      if (matchName) customerName = matchName[1].trim();
+      const matchPhone = o.notes.match(/Phone:\s*([^,|]+)/i);
+      if (matchPhone) phone = matchPhone[1].trim();
+    }
+
+    return {
+      ...o,
+      customer_name: o.customer_name || customerName,
+      phone: o.phone || phone,
+    };
+  });
+
+  const pendingCount = orders.filter((o) => o.status === "placed").length;
+
+  return { ok: true, data: orders, pendingCount };
+}
+
+export async function reviewMarketplaceOrderAdminAction(input: {
+  orderId: string;
+  action: "accept" | "reject";
+  rejectionReason?: string;
+}) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) {
+    return { ok: false, error: auth.error || "Only owners and managers can accept or reject marketplace orders." };
+  }
+  const { supabase, restaurantId, user } = auth.context;
+
+  if (!input.orderId || typeof input.orderId !== "string") {
+    return { ok: false, error: "Invalid order ID." };
+  }
+
+  if (input.action !== "accept" && input.action !== "reject") {
+    return { ok: false, error: "Action must be either accept or reject." };
+  }
+
+  const nowIso = new Date().toISOString();
+
+  if (input.action === "accept") {
+    const { data, error } = await supabase
+      .from("session_orders")
+      .update({
+        status: "accepted",
+        accepted_at: nowIso,
+        accepted_by: user.id,
+        marketplace_status: "accepted",
+      })
+      .eq("id", input.orderId)
+      .eq("restaurant_id", restaurantId)
+      .in("source", ["swiggy", "zomato"])
+      .eq("status", "placed")
+      .select("id");
+
+    if (error) return { ok: false, error: error.message };
+
+    if (!data || data.length === 0) {
+      return {
+        ok: false,
+        error: "Order could not be accepted. It may have already been processed by another manager or is no longer pending.",
+      };
+    }
+  } else {
+    const cleanReason = (input.rejectionReason || "").trim();
+    if (!cleanReason || cleanReason.length < 2) {
+      return { ok: false, error: "A valid rejection reason is required." };
+    }
+
+    const { data, error } = await supabase
+      .from("session_orders")
+      .update({
+        status: "cancelled",
+        rejected_at: nowIso,
+        rejected_by: user.id,
+        rejection_reason: cleanReason,
+        cancellation_reason: cleanReason,
+        cancelled_at: nowIso,
+        cancelled_by: user.id,
+        marketplace_status: "rejected",
+      })
+      .eq("id", input.orderId)
+      .eq("restaurant_id", restaurantId)
+      .in("source", ["swiggy", "zomato"])
+      .eq("status", "placed")
+      .select("id");
+
+    if (error) return { ok: false, error: error.message };
+
+    if (!data || data.length === 0) {
+      return {
+        ok: false,
+        error: "Order could not be rejected. It may have already been processed by another manager or is no longer pending.",
+      };
+    }
+  }
+
+  revalidatePath("/admin/online-orders");
+  revalidatePath("/admin/kitchen");
+  revalidatePath("/admin/orders");
+  return { ok: true };
+}
+
+export async function simulateMarketplaceOrderIngestionAdminAction(input: {
+  provider: "swiggy" | "zomato";
+  customerName: string;
+  phone?: string;
+  items: { menu_item_id: string; qty: number; notes?: string }[];
+  notes?: string;
+}) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Only owners and managers can run simulator." };
+  const { supabase, restaurantId } = auth.context;
+
+  if (input.provider !== "swiggy" && input.provider !== "zomato") {
+    return { ok: false, error: "Provider must be swiggy or zomato." };
+  }
+
+  const cleanCustomer = (input.customerName || "").trim();
+  if (!cleanCustomer) {
+    return { ok: false, error: "Customer name is required." };
+  }
+
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return { ok: false, error: "At least one menu item is required." };
+  }
+
+  const menuItemIds = Array.from(new Set(input.items.map((i) => i.menu_item_id)));
+  const { data: menuItems, error: miErr } = await supabase
+    .from("menu_items")
+    .select("id, title, price, available, prep_minutes")
+    .eq("restaurant_id", restaurantId)
+    .in("id", menuItemIds);
+
+  if (miErr || !menuItems) {
+    return { ok: false, error: "Failed to validate menu items." };
+  }
+
+  const miMap = new Map<string, { id: string; title: string; price: number; available: boolean; prep_minutes?: number }>();
+  menuItems.forEach((mi) => miMap.set(mi.id, mi));
+
+  let subtotal = 0;
+  let maxPrep = 15;
+  const validatedLines: any[] = [];
+
+  for (const item of input.items) {
+    const mi = miMap.get(item.menu_item_id);
+    if (!mi) {
+      return { ok: false, error: "Invalid or unknown menu item in cart." };
+    }
+    if (!mi.available) {
+      return { ok: false, error: `Item "${mi.title}" is currently unavailable/sold out.` };
+    }
+
+    const qty = Math.floor(Number(item.qty || 1));
+    if (isNaN(qty) || qty <= 0 || qty > 100) {
+      return { ok: false, error: `Invalid item quantity for "${mi.title}". Must be 1-100.` };
+    }
+
+    const price = Number(mi.price || 0);
+    subtotal += price * qty;
+    if (mi.prep_minutes && mi.prep_minutes > maxPrep) {
+      maxPrep = mi.prep_minutes;
+    }
+
+    validatedLines.push({
+      menu_item_id: mi.id,
+      title: mi.title,
+      price,
+      qty,
+      notes: (item.notes || "").trim() || null,
+    });
+  }
+
+  // Determine next order number atomically per restaurant
+  const { data: maxOrderData } = await supabase
+    .from("session_orders")
+    .select("order_number")
+    .eq("restaurant_id", restaurantId)
+    .order("order_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextOrderNumber = (maxOrderData?.order_number ? Number(maxOrderData.order_number) : 1000) + 1;
+
+  const externalOrderId = `${input.provider.toUpperCase()}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+  const customerPhone = (input.phone || "").trim() || null;
+  const customerNotes = `Customer: ${cleanCustomer}${customerPhone ? ` | Phone: ${customerPhone}` : ""}${
+    input.notes ? ` | Notes: ${input.notes.trim()}` : ""
+  }`;
+
+  // Resolve table for online delivery session
+  const { data: existingTable } = await supabase
+    .from("restaurant_tables")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .limit(1)
+    .maybeSingle();
+
+  let targetTableId = existingTable?.id;
+  if (!targetTableId) {
+    const { data: createdTable } = await supabase
+      .from("restaurant_tables")
+      .insert({
+        restaurant_id: restaurantId,
+        label: "Delivery Desk",
+      })
+      .select("id")
+      .single();
+    targetTableId = createdTable?.id;
+  }
+
+  // Create a dining_session for the online delivery order
+  const { data: newSess, error: sessErr } = await supabase
+    .from("dining_sessions")
+    .insert({
+      restaurant_id: restaurantId,
+      table_id: targetTableId,
+      customer_name: cleanCustomer,
+      phone: customerPhone,
+      status: "open",
+    })
+    .select("id")
+    .single();
+
+  if (sessErr || !newSess) {
+    return { ok: false, error: sessErr?.message || "Failed to create delivery dining session." };
+  }
+
+  const { data: insertedOrder, error: insertErr } = await supabase
+    .from("session_orders")
+    .insert({
+      restaurant_id: restaurantId,
+      session_id: newSess.id,
+      items: validatedLines,
+      amount: subtotal,
+      subtotal: subtotal,
+      discount: 0,
+      tax: 0,
+      service_charge: 0,
+      total: subtotal,
+      notes: customerNotes,
+      kind: "delivery",
+      source: input.provider,
+      status: "placed",
+      target_prep_mins: maxPrep,
+      order_number: nextOrderNumber,
+      external_order_id: externalOrderId,
+      marketplace_status: "placed",
+    })
+    .select("id, order_number, external_order_id")
+    .single();
+
+  if (insertErr) {
+    if (insertErr.code === "23505") {
+      return { ok: false, error: "Duplicate external order ID encountered. Please try again." };
+    }
+    return { ok: false, error: insertErr.message };
+  }
+
+  revalidatePath("/admin/online-orders");
+  revalidatePath("/admin/orders");
+  return { ok: true, data: insertedOrder };
+}
+
+export async function getAvailableMenuItemsAdminAction() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error, data: [] };
+  const { supabase, restaurantId } = auth.context;
+
+  const { data, error } = await supabase
+    .from("menu_items")
+    .select("id, title, price, available, category, prep_minutes")
+    .eq("restaurant_id", restaurantId)
+    .eq("available", true)
+    .order("title", { ascending: true });
+
+  if (error) return { ok: false, error: error.message, data: [] };
+  return { ok: true, data: data || [] };
+}

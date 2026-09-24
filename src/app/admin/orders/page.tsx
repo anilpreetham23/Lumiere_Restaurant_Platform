@@ -60,6 +60,12 @@ type AdminOrder = {
   inventory_consumed_at?: string | null;
   inventory_consumption_status?: string | null;
   inventory_consumption_notes?: string | null;
+  external_order_id?: string | null;
+  accepted_at?: string | null;
+  accepted_by?: string | null;
+  rejected_at?: string | null;
+  rejected_by?: string | null;
+  rejection_reason?: string | null;
   dining_sessions?: {
     customer_name?: string | null;
     phone?: string | null;
@@ -572,7 +578,10 @@ export default function AdminOrdersPage() {
                     >
                       {/* Order Number */}
                       <td className="py-3.5 px-4 font-mono font-semibold text-ink">
-                        #{order.order_number ?? "---"}
+                        <div>#{order.order_number ?? "---"}</div>
+                        {order.external_order_id && (
+                          <div className="text-[10px] text-neutral-400 font-normal">{order.external_order_id}</div>
+                        )}
                       </td>
 
                       {/* Status */}
@@ -606,9 +615,19 @@ export default function AdminOrdersPage() {
 
                       {/* Source */}
                       <td className="py-3.5 px-4">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 text-[11px]">
-                          {SOURCE_LABELS[order.source] || order.source}
-                        </span>
+                        {order.source === "swiggy" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold bg-orange-100 text-orange-800 border border-orange-200 text-[11px]">
+                            🟠 Swiggy
+                          </span>
+                        ) : order.source === "zomato" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold bg-rose-100 text-rose-800 border border-rose-200 text-[11px]">
+                            🔴 Zomato
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-100 text-neutral-700 text-[11px]">
+                            {SOURCE_LABELS[order.source] || order.source}
+                          </span>
+                        )}
                       </td>
 
                       {/* Table */}
