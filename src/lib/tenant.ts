@@ -14,6 +14,7 @@ export type Restaurant = {
 export type RestaurantMembership = {
   restaurant_id: string;
   role: Role;
+  status: string;
   restaurant: Restaurant;
 };
 
@@ -26,8 +27,9 @@ export async function getRestaurantMemberships(): Promise<RestaurantMembership[]
 
   const { data } = await supabase
     .from("restaurant_memberships")
-    .select("restaurant_id, role, restaurant:restaurants!inner(id, name, slug, logo, status)")
+    .select("restaurant_id, role, status, restaurant:restaurants!inner(id, name, slug, logo, status)")
     .eq("user_id", user.id)
+    .eq("status", "active")
     .eq("restaurant.status", "active")
     .order("created_at");
 

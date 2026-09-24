@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/tenant";
+import { requireRole, type Role } from "@/lib/tenant";
 import type { CreateStaffOrderInput } from "@/lib/order";
 import type { SaveRecipeInput, RecipeHeaderDetail } from "@/lib/recipe";
 
@@ -2577,4 +2577,305 @@ export async function adjustLoyaltyPointsAdminAction(input: {
   revalidatePath("/admin/loyalty");
   revalidatePath("/admin/customers");
   return { ok: true, result: data };
+}
+
+// --- STAFF MANAGEMENT & ROLES ACTIONS ---
+
+export async function getStaffOverviewAdminAction() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Not authorized", data: [], invitations: [], stats: { totalStaff: 0, activeStaff: 0, ownersCount: 0, managersCount: 0, pendingInvites: 0 } };
+
+  const { restaurantId, role: currentRole } = auth.context;
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+
+  // Fetch memberships for active restaurant
+  const { data: memberships, error: memErr } = await admin
+    .from("restaurant_memberships")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: true });
+
+  if (memErr) {
+    return { ok: false, error: memErr.message, data: [], invitations: [], stats: { totalStaff: 0, activeStaff: 0, ownersCount: 0, managersCount: 0, pendingInvites: 0 } };
+  }
+
+  // Fetch invitations
+  const { data: invs } = await admin
+    .from("staff_invitations")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+
+  // Fetch auth user details for all members
+  const userIds = (memberships || []).map((m) => m.user_id);
+  const userMap = new Map<string, { email: string; fullName: string; createdAt: string; lastSignInAt: string | null }>();
+
+  if (userIds.length > 0) {
+    const { data: authUsers } = await admin.auth.admin.listUsers();
+    if (authUsers && authUsers.users) {
+      for (const u of authUsers.users) {
+        if (userIds.includes(u.id)) {
+          const fullName = u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split("@")[0] || "Staff Member";
+          userMap.set(u.id, {
+            email: u.email || "",
+            fullName,
+            createdAt: u.created_at,
+            lastSignInAt: u.last_sign_in_at || null,
+          });
+        }
+      }
+    }
+  }
+
+  const staffList = (memberships || []).map((m) => {
+    const uInfo = userMap.get(m.user_id) || { email: "Unknown", fullName: "Staff Member", createdAt: m.created_at, lastSignInAt: null };
+    return {
+      id: m.id,
+      userId: m.user_id,
+      restaurantId: m.restaurant_id,
+      role: m.role as Role,
+      status: (m.status || "active") as "active" | "inactive",
+      email: uInfo.email,
+      fullName: uInfo.fullName,
+      createdAt: m.created_at,
+      lastSignInAt: uInfo.lastSignInAt,
+    };
+  });
+
+  const invitationsList = (invs || []).map((inv) => ({
+    id: inv.id,
+    restaurantId: inv.restaurant_id,
+    email: inv.email,
+    role: inv.role as Role,
+    token: inv.token,
+    status: inv.status as "pending" | "accepted" | "revoked" | "expired",
+    invitedBy: inv.invited_by,
+    expiresAt: inv.expires_at,
+    createdAt: inv.created_at,
+  }));
+
+  const activeStaff = staffList.filter((s) => s.status === "active");
+  const stats = {
+    totalStaff: staffList.length,
+    activeStaff: activeStaff.length,
+    ownersCount: activeStaff.filter((s) => s.role === "owner").length,
+    managersCount: activeStaff.filter((s) => s.role === "manager").length,
+    pendingInvites: invitationsList.filter((i) => i.status === "pending").length,
+  };
+
+  return {
+    ok: true,
+    data: staffList,
+    invitations: invitationsList,
+    currentRole,
+    currentUserId: auth.context.user.id,
+    stats,
+  };
+}
+
+export async function updateStaffRoleAdminAction(targetUserId: string, newRole: Role) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
+
+  const { restaurantId, user: caller, role: callerRole } = auth.context;
+
+  if (caller.id === targetUserId) {
+    return { ok: false, error: "Members cannot modify their own role" };
+  }
+
+  if (!["owner", "manager", "staff"].includes(newRole)) {
+    return { ok: false, error: "Invalid role specified" };
+  }
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+
+  // Target membership verification
+  const { data: targetMem } = await admin
+    .from("restaurant_memberships")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .eq("user_id", targetUserId)
+    .single();
+
+  if (!targetMem) {
+    return { ok: false, error: "Target staff member not found in active restaurant" };
+  }
+
+  // Owner privilege enforcement
+  if ((targetMem.role === "owner" || newRole === "owner") && callerRole !== "owner") {
+    return { ok: false, error: "Only an owner can grant or revoke owner permissions" };
+  }
+
+  // Last owner protection
+  if (targetMem.role === "owner" && newRole !== "owner") {
+    const { count } = await admin
+      .from("restaurant_memberships")
+      .select("*", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId)
+      .eq("role", "owner")
+      .eq("status", "active");
+
+    if ((count ?? 0) <= 1) {
+      return { ok: false, error: "Cannot demote the last active owner of the restaurant" };
+    }
+  }
+
+  const { error } = await admin
+    .from("restaurant_memberships")
+    .update({ role: newRole, updated_at: new Date().toISOString() })
+    .eq("id", targetMem.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/staff");
+  return { ok: true };
+}
+
+export async function toggleStaffStatusAdminAction(targetUserId: string, newStatus: "active" | "inactive") {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
+
+  const { restaurantId, user: caller, role: callerRole } = auth.context;
+
+  if (caller.id === targetUserId) {
+    return { ok: false, error: "Members cannot deactivate their own membership" };
+  }
+
+  if (!["active", "inactive"].includes(newStatus)) {
+    return { ok: false, error: "Invalid status specified" };
+  }
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+
+  const { data: targetMem } = await admin
+    .from("restaurant_memberships")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .eq("user_id", targetUserId)
+    .single();
+
+  if (!targetMem) {
+    return { ok: false, error: "Target staff member not found in active restaurant" };
+  }
+
+  if (targetMem.role === "owner" && callerRole !== "owner") {
+    return { ok: false, error: "Only an owner can deactivate an owner membership" };
+  }
+
+  if (targetMem.role === "owner" && newStatus === "inactive") {
+    const { count } = await admin
+      .from("restaurant_memberships")
+      .select("*", { count: "exact", head: true })
+      .eq("restaurant_id", restaurantId)
+      .eq("role", "owner")
+      .eq("status", "active");
+
+    if ((count ?? 0) <= 1) {
+      return { ok: false, error: "Cannot deactivate the last active owner of the restaurant" };
+    }
+  }
+
+  const { error } = await admin
+    .from("restaurant_memberships")
+    .update({ status: newStatus, updated_at: new Date().toISOString() })
+    .eq("id", targetMem.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/staff");
+  return { ok: true };
+}
+
+export async function createStaffInvitationAdminAction(email: string, role: Role) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
+
+  const { restaurantId, user: caller, role: callerRole } = auth.context;
+
+  const cleanEmail = email?.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@")) {
+    return { ok: false, error: "A valid email address is required" };
+  }
+
+  if (!["owner", "manager", "staff"].includes(role)) {
+    return { ok: false, error: "Invalid role specified" };
+  }
+
+  if (role === "owner" && callerRole !== "owner") {
+    return { ok: false, error: "Only an owner can invite another owner" };
+  }
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+
+  // Check if user is already a member
+  const { data: existingUsers } = await admin.auth.admin.listUsers();
+  const matchedUser = existingUsers?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+
+  if (matchedUser) {
+    const { data: existingMem } = await admin
+      .from("restaurant_memberships")
+      .select("id, status")
+      .eq("restaurant_id", restaurantId)
+      .eq("user_id", matchedUser.id)
+      .maybeSingle();
+
+    if (existingMem && existingMem.status === "active") {
+      return { ok: false, error: "User is already an active member of this restaurant" };
+    }
+  }
+
+  // Check if pending invitation already exists
+  const { data: existingInv } = await admin
+    .from("staff_invitations")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .eq("email", cleanEmail)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (existingInv) {
+    return { ok: false, error: "A pending invitation already exists for this email" };
+  }
+
+  const crypto = await import("crypto");
+  const token = crypto.randomBytes(32).toString("hex");
+
+  const { error: insertErr } = await admin.from("staff_invitations").insert({
+    restaurant_id: restaurantId,
+    email: cleanEmail,
+    role,
+    token,
+    invited_by: caller.id,
+    status: "pending",
+  });
+
+  if (insertErr) return { ok: false, error: insertErr.message };
+
+  revalidatePath("/admin/staff");
+  return { ok: true, token };
+}
+
+export async function revokeStaffInvitationAdminAction(invitationId: string) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
+
+  const { restaurantId } = auth.context;
+
+  const { createAdminClient } = await import("@/lib/supabase/admin");
+  const admin = createAdminClient();
+
+  const { error } = await admin
+    .from("staff_invitations")
+    .update({ status: "revoked", updated_at: new Date().toISOString() })
+    .eq("id", invitationId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/staff");
+  return { ok: true };
 }

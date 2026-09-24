@@ -52,6 +52,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/admin/reviews" className="text-sm text-neutral-600 hover:text-wine">Reviews</Link>
             <Link href="/admin/loyalty" className="text-sm text-neutral-600 hover:text-wine">Loyalty</Link>
             <Link href="/admin/payments" className="text-sm text-neutral-600 hover:text-wine">Payments</Link>
+            <Link href="/admin/staff" className="text-sm text-neutral-600 hover:text-wine">Staff</Link>
+            <Link href="/admin/roles" className="text-sm text-neutral-600 hover:text-wine">Roles</Link>
             <Link href="/admin/settings" className="text-sm text-neutral-600 hover:text-wine">Settings</Link>
             <Link href="/" className="text-sm text-neutral-600 hover:text-wine">View site</Link>
             <AdminLogout />
