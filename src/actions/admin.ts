@@ -336,10 +336,6 @@ export type UploadAssetCategory = "logo" | "menu";
 export async function uploadRestaurantAssetAction(
   formData: FormData
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  const auth = await requireRole(["owner", "manager"]);
-  if (!auth.ok) return { ok: false, error: auth.error };
-  const { supabase, restaurantId } = auth.context;
-
   const file = formData.get("file") as File | null;
   const category = (formData.get("category") as string)?.trim() as UploadAssetCategory | undefined;
 
@@ -350,6 +346,19 @@ export async function uploadRestaurantAssetAction(
   if (!category || (category !== "logo" && category !== "menu")) {
     return { ok: false, error: "Invalid upload category" };
   }
+
+  // Category-specific role authorization matching Storage RLS Policies:
+  // - "logo" asset uploads require OWNER role (matching branding policy).
+  // - "menu" asset uploads require OWNER or MANAGER role.
+  const requiredRoles: Role[] = category === "logo" ? ["owner"] : ["owner", "manager"];
+  const auth = await requireRole(requiredRoles);
+  if (!auth.ok) {
+    return {
+      ok: false,
+      error: auth.error || (category === "logo" ? "Owner authority required to update restaurant logo." : "Manager authority required to update menu image.")
+    };
+  }
+  const { supabase, restaurantId } = auth.context;
 
   // 1. Validate File Size (<= 5 MB)
   const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -445,8 +454,8 @@ export async function uploadRestaurantAssetAction(
 }
 
 export async function resetRestaurantLogoAction(): Promise<{ ok: true; logo_url: string } | { ok: false; error: string }> {
-  const auth = await requireRole(["owner", "manager"]);
-  if (!auth.ok) return { ok: false, error: auth.error };
+  const auth = await requireRole(["owner"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Owner authority required to reset restaurant logo." };
   const { supabase, restaurantId } = auth.context;
 
   const DEFAULT_LOGO = "/Shinchan.jpg";
