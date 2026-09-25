@@ -246,7 +246,7 @@ export default function TableOrder({
     if (data) setSnap(data as SessionSnapshot);
     setCart({}); setOpen(false);
     setToast("Order sent to the kitchen");
-    // Loyalty: recognise returning guests by phone.
+    // Guest recognition: recognise returning guests by phone.
     if (phone && !welcome) {
       const { data: c } = await supabase.rpc("touch_customer_for_table", {
         p_token: token, p_phone: phone, p_name: name || null,

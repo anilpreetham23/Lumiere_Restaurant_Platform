@@ -8,7 +8,15 @@ import type { MenuItem } from "@/lib/order";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export default function ReservationForm({ menu = [] }: { menu?: MenuItem[] }) {
+export default function ReservationForm({
+  menu = [],
+  restaurantSlug,
+  restaurantName,
+}: {
+  menu?: MenuItem[];
+  restaurantSlug?: string;
+  restaurantName?: string;
+}) {
   const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD local
   const [state, setState] = useState<"idle" | "loading" | "verifying" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +67,7 @@ export default function ReservationForm({ menu = [] }: { menu?: MenuItem[] }) {
     e.preventDefault();
     setState("loading"); setError(null);
     const pre_order = Object.entries(pre).map(([menu_item_id, qty]) => ({ menu_item_id, qty }));
-    const res = await createReservation({ ...form, pre_order });
+    const res = await createReservation({ ...form, pre_order, restaurant_slug: restaurantSlug });
     if (!res.ok) { setError(res.error ?? "Something went wrong."); setState("idle"); return; }
 
     if (res.payEnabled && res.id && (res.deposit ?? 0) > 0) {

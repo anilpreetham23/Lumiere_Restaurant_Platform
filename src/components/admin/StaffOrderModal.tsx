@@ -123,6 +123,7 @@ export function StaffOrderModal({
       .from("restaurant_tables")
       .select("id, label, section, seats, state, current_session_id")
       .eq("restaurant_id", resId)
+      .neq("state", "out_of_service")
       .order("section")
       .order("label");
     setTables((data as TableInfo[]) || []);
@@ -140,11 +141,15 @@ export function StaffOrderModal({
     }
     const { data } = await supabase
       .from("menu_items")
-      .select("id, title, description, price, category, available, prep_minutes")
+      .select("id, title, description, price, cuisine, available, prep_minutes")
       .eq("restaurant_id", resId)
-      .order("category")
+      .order("cuisine")
       .order("title");
-    setMenuItems((data as MenuItem[]) || []);
+    const mapped = (data || []).map((item: any) => ({
+      ...item,
+      category: item.cuisine,
+    }));
+    setMenuItems((mapped as MenuItem[]) || []);
     setLoadingMenu(false);
   }, [supabase]);
 

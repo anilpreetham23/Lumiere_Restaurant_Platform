@@ -1,10 +1,9 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import AdminLogout from "@/components/AdminLogout";
-import { getActiveRestaurant, getRestaurantMemberships } from "@/lib/tenant";
+import { getActiveRestaurant, getRestaurantMemberships, getActiveRestaurantBranding } from "@/lib/tenant";
 import { switchActiveRestaurant } from "@/actions/tenant";
 import { AdminNavigation } from "@/components/admin/AdminNavigation";
+import { NoActiveRestaurantFallback } from "@/components/admin/NoActiveRestaurantFallback";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -19,27 +18,23 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   const [active, memberships] = await Promise.all([getActiveRestaurant(), getRestaurantMemberships()]);
   if (!active) {
-    return (
-      <div className="min-h-screen grid place-items-center bg-cream px-5 text-center">
-        <div>
-          <h1 className="font-serif text-2xl">No restaurant access</h1>
-          <p className="text-sm text-neutral-500 mt-2">
-            Ask a platform administrator to add your restaurant membership.
-          </p>
-        </div>
-      </div>
-    );
+    return <NoActiveRestaurantFallback userEmail={user.email} />;
   }
 
+  const branding = await getActiveRestaurantBranding(active.restaurant_id);
+
   return (
-    <div className="min-h-screen bg-cream">
-      <AdminNavigation
-        restaurantId={active.restaurant_id}
-        restaurantName={active.restaurant.name}
-        memberships={memberships}
-        switchActiveRestaurantAction={switchActiveRestaurant}
-      />
-      <main className="mx-auto max-w-6xl px-5 py-8">{children}</main>
-    </div>
+    <AdminNavigation
+      restaurantId={active.restaurant_id}
+      restaurantName={active.restaurant.name}
+      logo={active.restaurant.logo}
+      branding={branding}
+      memberships={memberships}
+      role={active.role}
+      switchActiveRestaurantAction={switchActiveRestaurant}
+      userEmail={user.email}
+    >
+      {children}
+    </AdminNavigation>
   );
 }

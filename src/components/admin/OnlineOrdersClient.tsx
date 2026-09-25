@@ -109,6 +109,8 @@ export function OnlineOrdersClient() {
   const [cart, setCart] = useState<{ menu_item_id: string; qty: number; notes?: string }[]>([]);
   const [simulating, setSimulating] = useState<boolean>(false);
   const [simError, setSimError] = useState<string | null>(null);
+  const [loadingMenuItems, setLoadingMenuItems] = useState<boolean>(false);
+  const [menuItemsError, setMenuItemsError] = useState<string | null>(null);
 
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
 
@@ -157,19 +159,32 @@ export function OnlineOrdersClient() {
     };
   }, [supabase, restaurantId, loadOrders]);
 
+  const fetchMenuItems = useCallback(async () => {
+    setLoadingMenuItems(true);
+    setMenuItemsError(null);
+    try {
+      const res = await getAvailableMenuItemsAdminAction();
+      setLoadingMenuItems(false);
+      if (res.ok && res.data) {
+        setMenuItems(res.data);
+        if (res.data.length > 0) {
+          setCart((prev) => (prev.length === 0 ? [{ menu_item_id: res.data[0].id, qty: 1 }] : prev));
+        }
+      } else {
+        setMenuItemsError(res.error || "Failed to load menu items.");
+      }
+    } catch (err: any) {
+      setLoadingMenuItems(false);
+      setMenuItemsError(err?.message || "Failed to load menu items.");
+    }
+  }, []);
+
   // Load available menu items when simulator opens
   useEffect(() => {
     if (showSimulator && menuItems.length === 0) {
-      getAvailableMenuItemsAdminAction().then((res) => {
-        if (res.ok && res.data) {
-          setMenuItems(res.data);
-          if (res.data.length > 0) {
-            setCart([{ menu_item_id: res.data[0].id, qty: 1 }]);
-          }
-        }
-      });
+      fetchMenuItems();
     }
-  }, [showSimulator, menuItems.length]);
+  }, [showSimulator, menuItems.length, fetchMenuItems]);
 
   // Filtered orders calculation
   const filteredOrders = useMemo(() => {
@@ -849,9 +864,28 @@ export function OnlineOrdersClient() {
                   </button>
                 </div>
 
-                {menuItems.length === 0 ? (
-                  <div className="p-4 text-center text-neutral-400 bg-neutral-50 rounded-lg">
-                    Loading menu items...
+                {loadingMenuItems ? (
+                  <div className="p-4 text-center text-neutral-400 bg-neutral-50 rounded-lg flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-wine" />
+                    <span>Loading menu items...</span>
+                  </div>
+                ) : menuItemsError ? (
+                  <div className="p-4 text-center bg-rose-50 border border-rose-200 rounded-lg space-y-2">
+                    <p className="text-xs text-rose-700 font-medium">{menuItemsError}</p>
+                    <button
+                      type="button"
+                      onClick={fetchMenuItems}
+                      className="px-3 py-1 bg-white border border-rose-300 text-rose-800 text-[11px] font-semibold rounded hover:bg-rose-100 transition inline-flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" /> Retry Loading Menu
+                    </button>
+                  </div>
+                ) : menuItems.length === 0 ? (
+                  <div className="p-4 text-center text-neutral-500 bg-neutral-50 border border-cream2 rounded-lg space-y-1">
+                    <p className="font-semibold text-xs text-ink">No menu items available</p>
+                    <p className="text-[11px] text-neutral-400">
+                      Please ensure active menu items exist for your active restaurant before simulating orders.
+                    </p>
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-48 overflow-y-auto p-1">

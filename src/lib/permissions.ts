@@ -1,4 +1,4 @@
-import { Role } from "@/lib/tenant";
+import { Role } from "@/lib/tenant-types";
 
 export type ModuleCategory =
   | "Dashboard"
@@ -14,7 +14,6 @@ export type ModuleCategory =
   | "Payments"
   | "Customers"
   | "Reviews"
-  | "Loyalty"
   | "Staff"
   | "Settings";
 
@@ -50,8 +49,6 @@ export type Permission =
   | "manage_customers"
   | "view_reviews"
   | "moderate_reviews"
-  | "view_loyalty"
-  | "adjust_loyalty"
   | "view_staff"
   | "manage_staff"
   | "invite_staff"
@@ -129,9 +126,6 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   { key: "view_reviews", label: "View Customer Reviews & Ratings", category: "Reviews", roles: { owner: true, manager: true, staff: true } },
   { key: "moderate_reviews", label: "Respond & Moderate Reviews", category: "Reviews", roles: { owner: true, manager: true, staff: false } },
 
-  // Loyalty
-  { key: "view_loyalty", label: "View Loyalty Balances", category: "Loyalty", roles: { owner: true, manager: true, staff: true } },
-  { key: "adjust_loyalty", label: "Manual Points Adjustments", category: "Loyalty", roles: { owner: true, manager: true, staff: false } },
 
   // Staff
   { key: "view_staff", label: "View Staff List & Roles", category: "Staff", roles: { owner: true, manager: true, staff: false } },

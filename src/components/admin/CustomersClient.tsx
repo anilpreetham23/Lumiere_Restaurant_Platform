@@ -157,7 +157,6 @@ export default function CustomersClient({ initialCustomers, initialStats, pagina
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
               {filteredCustomers.map((cust) => {
                 const isSelected = selectedCustomer?.id === cust.id;
-                const balance = cust.loyalty_accounts?.[0]?.balance || 0;
                 return (
                   <button
                     key={cust.id}
@@ -183,7 +182,7 @@ export default function CustomersClient({ initialCustomers, initialStats, pagina
                     </div>
 
                     <div className="mt-2 flex items-center justify-between text-xs text-neutral-400 border-t border-neutral-100 pt-2">
-                      <span>Loyalty: <strong className="text-ink">{balance} pts</strong></span>
+                      <span>Last Visit</span>
                       <span>
                         {cust.last_visit_at
                           ? new Date(cust.last_visit_at).toLocaleDateString()
@@ -331,20 +330,6 @@ export default function CustomersClient({ initialCustomers, initialStats, pagina
                 </div>
               </div>
 
-              {/* Loyalty Account Summary */}
-              {selectedCustomer.loyalty_accounts?.[0] && (
-                <div className="bg-neutral-900 text-white rounded-xl p-4 flex items-center justify-between">
-                  <div>
-                    <span className="text-xs uppercase text-gold font-semibold tracking-wider block">Loyalty Membership</span>
-                    <span className="font-serif text-2xl font-bold mt-0.5 block">
-                      {selectedCustomer.loyalty_accounts[0].balance} Points Balance
-                    </span>
-                  </div>
-                  <div className="text-right text-xs text-neutral-400">
-                    <div>Lifetime Earned: <strong className="text-white">{selectedCustomer.loyalty_accounts[0].lifetime_points} pts</strong></div>
-                  </div>
-                </div>
-              )}
 
               {/* Notes Section */}
               {selectedCustomer.notes && (

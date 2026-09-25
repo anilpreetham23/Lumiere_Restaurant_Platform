@@ -51,6 +51,7 @@ const STATE_STYLE: Record<string, { bg: string; border: string; text: string; la
   occupied: { bg: "bg-wine/10", border: "border-wine/40", text: "text-wine", label: "Occupied" },
   reserved: { bg: "bg-amber-50", border: "border-amber-300", text: "text-amber-800", label: "Reserved" },
   bill_pending: { bg: "bg-indigo-50", border: "border-indigo-300", text: "text-indigo-800", label: "Bill Requested" },
+  out_of_service: { bg: "bg-slate-100", border: "border-slate-300", text: "text-slate-600", label: "Out of Service" },
 };
 
 export default function FloorPage() {
@@ -377,7 +378,7 @@ export default function FloorPage() {
                 Canvas Grid Mode · {filteredTables.length} Tables
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {filteredTables.map((t) => {
                   const sess = sessionOf(t.id);
                   const total = totalOf(sess?.id);
@@ -387,22 +388,22 @@ export default function FloorPage() {
                   return (
                     <div
                       key={t.id}
-                      className={`rounded-2xl border p-4 transition-all duration-200 shadow-xs flex flex-col justify-between ${style.bg} ${style.border}`}
+                      className={`rounded-2xl border p-4 transition-all duration-200 shadow-xs flex flex-col justify-between min-w-0 ${style.bg} ${style.border}`}
                     >
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-start justify-between gap-1 mb-1">
-                          <span className="font-serif font-bold text-xl text-ink">
+                          <span className="font-serif font-bold text-xl text-ink truncate">
                             {t.label}
                           </span>
                           <span
-                            className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full border ${style.bg} ${style.border} ${style.text}`}
+                            className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full border shrink-0 ${style.bg} ${style.border} ${style.text}`}
                           >
                             {style.label}
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-2 text-xs opacity-80 mt-1">
-                          <span className="flex items-center gap-1">
+                        <div className="flex items-center gap-2 text-xs opacity-80 mt-1 min-w-0">
+                          <span className="flex items-center gap-1 shrink-0">
                             <Users size={12} /> {t.seats} seats
                           </span>
                           <span>·</span>
@@ -416,52 +417,84 @@ export default function FloorPage() {
                         )}
                       </div>
 
-                      <div className="mt-4 pt-3 border-t border-black/5 flex items-center justify-between gap-2">
+                      <div className="mt-4 pt-3 border-t border-black/5 flex flex-wrap items-center justify-between gap-2">
                         {/* QR Trigger */}
                         <button
                           onClick={() => openQrModal(t)}
-                          className="p-1.5 rounded-lg bg-white/80 hover:bg-white text-neutral-700 border border-black/10 transition-colors"
+                          className="p-1.5 rounded-lg bg-white/80 hover:bg-white text-neutral-700 border border-black/10 transition-colors shrink-0"
                           title="View & Print QR"
                         >
                           <QrCode size={15} />
                         </button>
 
                         {/* State Actions */}
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            onClick={() => {
-                              setPosTable(t);
-                              setShowPosModal(true);
-                            }}
-                            className="text-xs px-2.5 py-1 rounded-full bg-wine/10 hover:bg-wine hover:text-white text-wine font-semibold transition-colors border border-wine/20 flex items-center gap-1"
-                            title="Take POS Order"
-                          >
-                            <ShoppingBag size={13} /> Take Order
-                          </button>
-                          {sess ? (
-                            <button
-                              onClick={() => act(() => settleSession(sess.id, "cash"), t.id)}
-                              disabled={busy === t.id}
-                              className="text-xs px-2.5 py-1 rounded-full bg-wine text-white font-medium shadow-xs disabled:opacity-60"
-                            >
-                              Settle
-                            </button>
-                          ) : t.state === "reserved" ? (
-                            <button
-                              onClick={() => act(() => setTableState(t.id, "free"), t.id)}
-                              disabled={busy === t.id}
-                              className="text-xs px-2.5 py-1 rounded-full bg-white text-neutral-700 border font-medium hover:bg-cream"
-                            >
-                              Free
-                            </button>
+                        <div className="flex flex-wrap items-center gap-1.5 justify-end flex-1 min-w-0">
+                          {t.state === "out_of_service" ? (
+                            <>
+                              <button
+                                disabled
+                                className="text-xs px-2.5 py-1 rounded-full bg-slate-200 text-slate-400 font-medium cursor-not-allowed flex items-center gap-1 whitespace-nowrap"
+                                title="Table is out of service"
+                              >
+                                <ShoppingBag size={13} /> Take Order
+                              </button>
+                              <button
+                                onClick={() => act(() => setTableState(t.id, "free"), t.id)}
+                                disabled={busy === t.id}
+                                className="text-xs px-2.5 py-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium shadow-xs disabled:opacity-60 whitespace-nowrap"
+                                title="Set Table Active"
+                              >
+                                Set Active
+                              </button>
+                            </>
                           ) : (
-                            <button
-                              onClick={() => act(() => setTableState(t.id, "reserved"), t.id)}
-                              disabled={busy === t.id}
-                              className="text-xs px-2.5 py-1 rounded-full bg-white text-neutral-700 border font-medium hover:bg-cream"
-                            >
-                              Reserve
-                            </button>
+                            <>
+                              <button
+                                onClick={() => {
+                                  setPosTable(t);
+                                  setShowPosModal(true);
+                                }}
+                                className="text-xs px-2.5 py-1 rounded-full bg-wine/10 hover:bg-wine hover:text-white text-wine font-semibold transition-colors border border-wine/20 flex items-center gap-1 whitespace-nowrap"
+                                title="Take POS Order"
+                              >
+                                <ShoppingBag size={13} /> Take Order
+                              </button>
+                              {sess ? (
+                                <button
+                                  onClick={() => act(() => settleSession(sess.id, "cash"), t.id)}
+                                  disabled={busy === t.id}
+                                  className="text-xs px-2.5 py-1 rounded-full bg-wine text-white font-medium shadow-xs disabled:opacity-60 whitespace-nowrap"
+                                >
+                                  Settle
+                                </button>
+                              ) : t.state === "reserved" ? (
+                                <button
+                                  onClick={() => act(() => setTableState(t.id, "free"), t.id)}
+                                  disabled={busy === t.id}
+                                  className="text-xs px-2.5 py-1 rounded-full bg-white text-neutral-700 border font-medium hover:bg-cream whitespace-nowrap"
+                                >
+                                  Free
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => act(() => setTableState(t.id, "reserved"), t.id)}
+                                    disabled={busy === t.id}
+                                    className="text-xs px-2.5 py-1 rounded-full bg-white text-neutral-700 border font-medium hover:bg-cream whitespace-nowrap"
+                                  >
+                                    Reserve
+                                  </button>
+                                  <button
+                                    onClick={() => act(() => setTableState(t.id, "out_of_service"), t.id)}
+                                    disabled={busy === t.id}
+                                    className="text-xs px-2 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-300 font-medium whitespace-nowrap"
+                                    title="Mark Out of Service"
+                                  >
+                                    Out of Service
+                                  </button>
+                                </>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

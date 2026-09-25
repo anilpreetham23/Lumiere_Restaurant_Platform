@@ -5,25 +5,20 @@ import {
   Flame,
   Clock,
   CheckCircle2,
-  BellRing,
   RefreshCw,
   AlertTriangle,
   Timer,
-  ChevronRight,
   Utensils,
   Check,
-  GlassWater,
-  ReceiptText
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { money } from "@/data/menu";
-import { setSessionOrderStatus, resolveServiceRequest } from "@/actions/admin";
+import { setSessionOrderStatus } from "@/actions/admin";
 import { getActiveRestaurantId } from "@/actions/tenant";
 import type { SessionOrder, OrderLine } from "@/lib/order";
 
 type TableRow = { id: string; label: string };
 type SessionRow = { id: string; table_id: string };
-type Req = { id: string; table_id: string; type: string; status: string; created_at: string };
 
 const STATE_CONFIG: Record<
   string,
@@ -64,7 +59,6 @@ export default function KitchenPage() {
   const [orders, setOrders] = useState<SessionOrder[]>([]);
   const [tables, setTables] = useState<TableRow[]>([]);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [reqs, setReqs] = useState<Req[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState<"all" | "new" | "preparing" | "ready">("all");
 
@@ -82,10 +76,9 @@ export default function KitchenPage() {
       setOrders([]);
       setSessions([]);
       setTables([]);
-      setReqs([]);
       return;
     }
-    const [o, s, t, r] = await Promise.all([
+    const [o, s, t] = await Promise.all([
       supabase
         .from("session_orders")
         .select("*")
@@ -102,12 +95,6 @@ export default function KitchenPage() {
         .from("restaurant_tables")
         .select("id,label")
         .eq("restaurant_id", restaurantId),
-      supabase
-        .from("service_requests")
-        .select("*")
-        .eq("restaurant_id", restaurantId)
-        .neq("status", "done")
-        .order("created_at", { ascending: true }),
     ]);
 
     // Exclude unapproved marketplace orders (swiggy / zomato in 'placed' status)
@@ -121,7 +108,6 @@ export default function KitchenPage() {
     setOrders(activeOrders);
     setSessions((s.data ?? []) as SessionRow[]);
     setTables((t.data ?? []) as TableRow[]);
-    setReqs((r.data ?? []) as Req[]);
   }, [supabase]);
 
   useEffect(() => {
@@ -129,7 +115,6 @@ export default function KitchenPage() {
     const ch = supabase
       .channel("kitchen-dashboard-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "session_orders" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "service_requests" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "dining_sessions" }, load)
       .subscribe();
 
@@ -150,21 +135,9 @@ export default function KitchenPage() {
     };
   }, [sessions, tables]);
 
-  const tableOfId = useCallback(
-    (tableId: string) => tables.find((t) => t.id === tableId)?.label ?? "Table —",
-    [tables]
-  );
-
   async function advanceStatus(orderId: string, nextStatus: "preparing" | "ready" | "served") {
     setBusy(orderId);
     await setSessionOrderStatus(orderId, nextStatus);
-    await load();
-    setBusy(null);
-  }
-
-  async function doneReq(id: string) {
-    setBusy(id);
-    await resolveServiceRequest(id);
     await load();
     setBusy(null);
   }
@@ -202,36 +175,6 @@ export default function KitchenPage() {
           </button>
         </div>
       </div>
-
-      {/* Service Request Banner */}
-      {reqs.length > 0 && (
-        <div className="bg-wine text-white rounded-2xl p-4 shadow-sm space-y-2 border border-wine/50">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-gold flex items-center gap-1.5">
-              <BellRing size={14} className="animate-bounce" /> Active Service Calls ({reqs.length})
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2 pt-1">
-            {reqs.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-center gap-2 bg-white/10 backdrop-blur-xs text-white rounded-xl px-3 py-1.5 text-xs font-medium border border-white/20"
-              >
-                <span className="font-serif font-bold text-gold">{tableOfId(r.table_id)}</span>
-                <span className="capitalize opacity-90">· {r.type}</span>
-                <button
-                  onClick={() => doneReq(r.id)}
-                  disabled={busy === r.id}
-                  className="ml-1 p-1 rounded-lg bg-white/20 hover:bg-emerald-500 hover:text-white transition-colors"
-                  title="Resolve request"
-                >
-                  <Check size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Workflow Summary / Filter Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

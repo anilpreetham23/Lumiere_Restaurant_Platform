@@ -108,6 +108,11 @@ export default function SettingsPage() {
       secondary_color: branding.secondary_color,
       accent_color: branding.accent_color,
       background_color: branding.background_color,
+      logo_url: branding.logo_url ?? null,
+      background_logo_enabled: branding.background_logo_enabled ?? true,
+      background_logo_opacity: branding.background_logo_opacity ?? 0.10,
+      banner_url: branding.banner_url ?? null,
+      font_family: branding.font_family ?? "Inter",
       assets: branding.assets,
     };
 
@@ -537,15 +542,103 @@ export default function SettingsPage() {
                     onChange={(e) => setBranding({ ...branding, background_color: e.target.value })}
                     className="w-9 h-9 rounded-lg border border-cream2 cursor-pointer p-0.5 bg-white shrink-0"
                   />
-                  <input
-                    id="branding-bg"
-                    type="text"
-                    value={branding.background_color}
+                </div>
+              </div>
+            </div>
+
+            {/* RESTAURANT LOGO & BRAND WATERMARK SECTION */}
+            <div className="border-t border-cream2 pt-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-serif text-base font-semibold text-ink">Restaurant Logo & Watermark</h3>
+                  <p className="text-xs text-neutral-500">Public logo identity and background watermark treatment</p>
+                </div>
+                {branding.logo_url && branding.logo_url !== "/Shinchan.jpg" && (
+                  <button
+                    type="button"
                     disabled={isReadOnly}
-                    onChange={(e) => setBranding({ ...branding, background_color: e.target.value })}
-                    className="field uppercase font-mono text-xs"
-                    placeholder="#FFFFFF"
-                  />
+                    onClick={() => setBranding({ ...branding, logo_url: "/Shinchan.jpg" })}
+                    className="text-xs text-wine hover:underline font-medium cursor-pointer"
+                  >
+                    Reset to Default Logo
+                  </button>
+                )}
+              </div>
+
+              <div className="grid sm:grid-cols-3 gap-4 text-xs items-start">
+                {/* Logo Preview Card */}
+                <div className="bg-cream/60 rounded-xl p-3 border border-cream2 flex flex-col items-center justify-center text-center">
+                  <div className="w-16 h-16 rounded-xl bg-white border border-amber-200/60 p-1 flex items-center justify-center shadow-xs overflow-hidden mb-2">
+                    <img
+                      src={branding.logo_url || "/Shinchan.jpg"}
+                      alt="Restaurant Logo"
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "/Shinchan.jpg";
+                      }}
+                    />
+                  </div>
+                  <span className="text-[0.68rem] font-semibold text-neutral-700">{profile?.name}</span>
+                  <span className="text-[0.6rem] font-medium text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full mt-1">
+                    {(!branding.logo_url || branding.logo_url === "/Shinchan.jpg") ? "Default Logo" : "Custom Logo"}
+                  </span>
+                </div>
+
+                {/* Logo URL Input */}
+                <div className="sm:col-span-2 space-y-3">
+                  <div>
+                    <label htmlFor="branding-logo-url" className="block font-medium mb-1 text-neutral-700">
+                      Custom Logo URL
+                    </label>
+                    <input
+                      id="branding-logo-url"
+                      type="text"
+                      value={branding.logo_url ?? ""}
+                      disabled={isReadOnly}
+                      onChange={(e) => setBranding({ ...branding, logo_url: e.target.value || null })}
+                      className="field font-mono text-xs"
+                      placeholder="https://example.com/logo.png or /Shinchan.jpg"
+                    />
+                    <p className="text-[0.65rem] text-neutral-400 mt-1">
+                      PNG, JPG, WebP, SVG supported. Leave empty to use default Shinchan logo.
+                    </p>
+                  </div>
+
+                  {/* Background Watermark Controls */}
+                  <div className="grid sm:grid-cols-2 gap-3 pt-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="branding-watermark-enabled"
+                        type="checkbox"
+                        checked={branding.background_logo_enabled ?? true}
+                        disabled={isReadOnly}
+                        onChange={(e) => setBranding({ ...branding, background_logo_enabled: e.target.checked })}
+                        className="rounded border-cream2 text-wine focus:ring-wine h-4 w-4 cursor-pointer"
+                      />
+                      <label htmlFor="branding-watermark-enabled" className="text-xs font-medium text-neutral-700 cursor-pointer">
+                        Public Background Watermark
+                      </label>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label htmlFor="branding-opacity" className="text-xs font-medium text-neutral-700">
+                          Opacity: {Math.round((branding.background_logo_opacity ?? 0.10) * 100)}%
+                        </label>
+                      </div>
+                      <input
+                        id="branding-opacity"
+                        type="range"
+                        min="0.01"
+                        max="0.50"
+                        step="0.01"
+                        value={branding.background_logo_opacity ?? 0.10}
+                        disabled={isReadOnly || !(branding.background_logo_enabled ?? true)}
+                        onChange={(e) => setBranding({ ...branding, background_logo_opacity: parseFloat(e.target.value) })}
+                        className="w-full accent-wine cursor-pointer"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

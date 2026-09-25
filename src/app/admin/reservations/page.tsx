@@ -19,16 +19,17 @@ export default async function AdminReservationsPage() {
   // Fetch reservations
   const { data: reservations } = await supabase
     .from("reservations")
-    .select("*, restaurant_tables(id, label, max_capacity, state)")
+    .select("*, restaurant_tables(id, label, seats, state)")
     .eq("restaurant_id", active.restaurant_id)
     .order("date", { ascending: false })
     .order("time", { ascending: true });
 
-  // Fetch tables for assignment dropdown
+  // Fetch active tables for assignment dropdown
   const { data: tables } = await supabase
     .from("restaurant_tables")
-    .select("id, label, max_capacity, state")
+    .select("id, label, seats, state")
     .eq("restaurant_id", active.restaurant_id)
+    .neq("state", "out_of_service")
     .order("label", { ascending: true });
 
   return (

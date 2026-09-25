@@ -108,9 +108,9 @@ export default function AdminRecipesPage() {
       getRecipes(),
       supabase
         .from("menu_items")
-        .select("id, title, category, price, available")
+        .select("id, title, cuisine, price, available")
         .eq("restaurant_id", resId)
-        .order("category")
+        .order("cuisine")
         .order("title"),
       supabase
         .from("inventory_items")
@@ -127,7 +127,11 @@ export default function AdminRecipesPage() {
       setRecipes(recipesRes.recipes || []);
     }
 
-    setMenuItems((menuRes.data as MenuItemSimple[]) || []);
+    const mappedMenuItems = (menuRes.data || []).map((item: any) => ({
+      ...item,
+      category: item.cuisine,
+    }));
+    setMenuItems((mappedMenuItems as MenuItemSimple[]) || []);
     setInventoryItems((invRes.data as InventoryItemSimple[]) || []);
     setLoading(false);
   }, [supabase]);

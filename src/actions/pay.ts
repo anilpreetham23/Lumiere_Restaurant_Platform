@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, serviceRoleConfigured } from "@/lib/supabase/admin";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import type { SessionSnapshot, SessionOrder } from "@/lib/order";
+import { resolvePublicRestaurantBySlug } from "@/lib/tenant";
 
 export type Receipt = { code: string; amount: number; table: string; method: string };
 
@@ -327,6 +328,7 @@ export type ReservationInput = {
   name: string; phone: string; email: string; guests: string;
   date: string; time: string; requests?: string;
   pre_order?: { menu_item_id: string; qty: number }[];
+  restaurant_slug?: string;
 };
 
 // Create the reservation. If payments are on, it starts as deposit-pending
@@ -339,16 +341,49 @@ export async function createReservation(
   if (input.date < new Date().toLocaleDateString("en-CA"))
     return { ok: false, error: "Please choose today or a future date." };
 
+  // Resolve trusted restaurant_id server-side
+  let targetRestaurantId: string | undefined = undefined;
+
+  if (input.restaurant_slug) {
+    const resolvedRest = await resolvePublicRestaurantBySlug(input.restaurant_slug);
+    if (!resolvedRest) {
+      return { ok: false, error: "Invalid or inactive restaurant selected." };
+    }
+    targetRestaurantId = resolvedRest.id;
+  } else {
+    // Missing tenant context on legacy route (/reservations) -> default Lumière fallback
+    const defaultRest = await resolvePublicRestaurantBySlug("lumiere");
+    if (defaultRest) {
+      targetRestaurantId = defaultRest.id;
+    }
+  }
+
   const payEnabled = paymentsEnabled();
   const deposit = payEnabled ? RES_DEPOSIT() : 0;
+
+  const insertPayload: Record<string, unknown> = {
+    name: input.name,
+    phone: input.phone,
+    email: input.email,
+    guests: input.guests,
+    date: input.date,
+    time: input.time,
+    requests: input.requests || null,
+    pre_order: input.pre_order ?? null,
+  };
+
+  if (targetRestaurantId) {
+    insertPayload.restaurant_id = targetRestaurantId;
+  }
 
   if (!serviceRoleConfigured()) {
     // no service role → fall back to the plain public insert (anon)
     const supabase = await createClient();
     const { error } = await supabase.from("reservations").insert({
-      name: input.name, phone: input.phone, email: input.email, guests: input.guests,
-      date: input.date, time: input.time, requests: input.requests || null,
-      pre_order: input.pre_order ?? null,
+      ...insertPayload,
+      status: "pending",
+      deposit_amount: 0,
+      deposit_status: "none",
     });
     if (error) return { ok: false, error: error.message };
     return { ok: true, deposit: 0, payEnabled: false };
@@ -356,9 +391,7 @@ export async function createReservation(
 
   const admin = createAdminClient();
   const { data, error } = await admin.from("reservations").insert({
-    name: input.name, phone: input.phone, email: input.email, guests: input.guests,
-    date: input.date, time: input.time, requests: input.requests || null,
-    pre_order: input.pre_order ?? null,
+    ...insertPayload,
     deposit_amount: deposit,
     deposit_status: deposit > 0 ? "pending" : "none",
     status: "pending",

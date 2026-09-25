@@ -3,8 +3,8 @@ import { getActiveRestaurant, requireRole } from "@/lib/tenant";
 import { createClient } from "@/lib/supabase/server";
 import PaymentsClient from "@/components/admin/PaymentsClient";
 
-export default async function AdminPaymentsPage() {
-  const auth = await requireRole(["owner", "manager"]);
+export default async function AdminRefundsPage() {
+  const auth = await requireRole(["owner"]);
   if (!auth.ok) {
     redirect("/admin");
   }
@@ -14,11 +14,9 @@ export default async function AdminPaymentsPage() {
     redirect("/admin");
   }
 
-  const userRole = auth.context.role; // 'owner' | 'manager' | 'staff'
-
+  const userRole = auth.context.role;
   const supabase = await createClient();
 
-  // Fetch payments for active restaurant
   const { data: payments } = await supabase
     .from("payments")
     .select(`
@@ -34,9 +32,9 @@ export default async function AdminPaymentsPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-cream2 pb-4">
         <div>
-          <h1 className="font-serif text-3xl text-ink">Payments & Refunds</h1>
+          <h1 className="font-serif text-3xl text-ink">Authoritative Refunds</h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Track transactions, inspect payment details, and process authoritative refunds.
+            Review completed transactions, inspect refund logs, and process partial or full refunds.
           </p>
         </div>
       </div>

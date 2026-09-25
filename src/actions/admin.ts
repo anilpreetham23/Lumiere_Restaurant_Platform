@@ -46,7 +46,7 @@ export async function resolveServiceRequest(id: string) {
 }
 
 export async function setMenuAvailability(id: string, available: boolean) {
-  const auth = await requireRole(["owner", "manager", "staff"]);
+  const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId } = auth.context;
   const { error } = await supabase.from("menu_items").update({ available }).eq("id", id).eq("restaurant_id", restaurantId);
@@ -172,6 +172,11 @@ export type AdminSettingsData = {
     secondary_color: string;
     accent_color: string;
     background_color: string;
+    logo_url?: string | null;
+    background_logo_enabled?: boolean;
+    background_logo_opacity?: number;
+    banner_url?: string | null;
+    font_family?: string;
     assets: Record<string, unknown>;
   };
   settings: {
@@ -202,7 +207,7 @@ export async function getAdminSettingsData(): Promise<
       .single(),
     supabase
       .from("restaurant_branding")
-      .select("primary_color, secondary_color, accent_color, background_color, assets")
+      .select("primary_color, secondary_color, accent_color, background_color, logo_url, background_logo_enabled, background_logo_opacity, banner_url, font_family, assets")
       .eq("restaurant_id", restaurantId)
       .maybeSingle(),
     supabase
@@ -220,6 +225,11 @@ export async function getAdminSettingsData(): Promise<
     secondary_color: "#16130f",
     accent_color: "#c8a24d",
     background_color: "#ffffff",
+    logo_url: "/Shinchan.jpg",
+    background_logo_enabled: true,
+    background_logo_opacity: 0.10,
+    banner_url: null,
+    font_family: "Inter",
     assets: {},
   };
 
@@ -229,6 +239,11 @@ export async function getAdminSettingsData(): Promise<
         secondary_color: resBranding.data.secondary_color || defaultBranding.secondary_color,
         accent_color: resBranding.data.accent_color || defaultBranding.accent_color,
         background_color: resBranding.data.background_color || defaultBranding.background_color,
+        logo_url: resBranding.data.logo_url || defaultBranding.logo_url,
+        background_logo_enabled: resBranding.data.background_logo_enabled ?? true,
+        background_logo_opacity: typeof resBranding.data.background_logo_opacity === "number" ? resBranding.data.background_logo_opacity : 0.10,
+        banner_url: resBranding.data.banner_url || null,
+        font_family: resBranding.data.font_family || "Inter",
         assets: (resBranding.data.assets as Record<string, unknown>) ?? {},
       }
     : defaultBranding;
@@ -321,13 +336,18 @@ export type UpdateRestaurantBrandingInput = {
   secondary_color: string;
   accent_color: string;
   background_color: string;
+  logo_url?: string | null;
+  background_logo_enabled?: boolean;
+  background_logo_opacity?: number;
+  banner_url?: string | null;
+  font_family?: string;
   assets?: Record<string, unknown>;
 };
 
 export async function updateRestaurantBranding(
   input: UpdateRestaurantBrandingInput
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const auth = await requireRole(["owner", "manager"]);
+  const auth = await requireRole(["owner"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId } = auth.context;
 
@@ -353,6 +373,24 @@ export async function updateRestaurantBranding(
     return { ok: false, error: "Background color must be a valid hex color code (e.g. #f6f0e7)" };
   }
 
+  let logo_url: string | null = null;
+  if (input.logo_url !== undefined && input.logo_url !== null) {
+    const trimmedLogo = input.logo_url.trim();
+    if (trimmedLogo) {
+      if (trimmedLogo.length > 2000) return { ok: false, error: "Logo URL must not exceed 2000 characters" };
+      if (!/^(https?:\/\/|\/|data:image\/)/i.test(trimmedLogo)) {
+        return { ok: false, error: "Logo must be a valid URL starting with http://, https://, /, or data:image/" };
+      }
+      logo_url = trimmedLogo;
+    }
+  }
+
+  const background_logo_enabled = input.background_logo_enabled ?? true;
+  let background_logo_opacity = 0.10;
+  if (typeof input.background_logo_opacity === "number" && !isNaN(input.background_logo_opacity)) {
+    background_logo_opacity = Math.min(Math.max(input.background_logo_opacity, 0.01), 1.0);
+  }
+
   let assets: Record<string, unknown> = {};
   if (input.assets !== undefined) {
     if (typeof input.assets !== "object" || input.assets === null || Array.isArray(input.assets)) {
@@ -368,12 +406,25 @@ export async function updateRestaurantBranding(
       secondary_color,
       accent_color,
       background_color,
+      logo_url,
+      background_logo_enabled,
+      background_logo_opacity,
+      banner_url: input.banner_url?.trim() || null,
+      font_family: input.font_family?.trim() || "Inter",
       assets,
       updated_at: new Date().toISOString(),
     })
     .eq("restaurant_id", restaurantId);
 
   if (error) return { ok: false, error: error.message };
+
+  // Sync restaurants table logo field for backward compatibility
+  await supabase
+    .from("restaurants")
+    .update({ logo: logo_url, updated_at: new Date().toISOString() })
+    .eq("id", restaurantId);
+
+  revalidatePath("/admin", "layout");
   revalidatePath("/admin/settings");
   return { ok: true };
 }
@@ -499,18 +550,19 @@ export async function updateSettings(patch: Record<string, unknown>) {
   return updateRestaurantSettings(typedInput);
 }
 
-export async function setTableState(id: string, state: "free" | "reserved" | "occupied" | "bill_pending") {
+export async function setTableState(id: string, state: "free" | "reserved" | "occupied" | "bill_pending" | "out_of_service") {
   const auth = await requireRole(["owner", "manager", "staff"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId } = auth.context;
-  const allowed = ["free", "reserved", "occupied", "bill_pending"];
+  const allowed = ["free", "reserved", "occupied", "bill_pending", "out_of_service"];
   if (!allowed.includes(state)) return { ok: false, error: "Invalid table state" };
   const patch: Record<string, unknown> = { state };
-  if (state === "free") patch.current_session_id = null;
+  if (state === "free" || state === "out_of_service") patch.current_session_id = null;
   const { error } = await supabase.from("restaurant_tables").update(patch).eq("id", id).eq("restaurant_id", restaurantId);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/admin/floor");
   revalidatePath("/admin/tables");
+  revalidatePath("/admin/reservations");
   return { ok: true };
 }
 
@@ -693,7 +745,7 @@ export async function cancelSessionOrder(
   id: string,
   reason: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const auth = await requireRole(["owner", "manager", "staff"]);
+  const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId, user } = auth.context;
 
@@ -920,7 +972,7 @@ export async function recordStockMovementAction(input: {
   quantity: number;
   reason?: string;
 }): Promise<{ ok: true; resultingQuantity: number } | { ok: false; error: string }> {
-  const auth = await requireRole(["owner", "manager", "staff"]);
+  const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase } = auth.context;
 
@@ -1164,7 +1216,7 @@ export async function getRecipes() {
       is_active,
       created_at,
       updated_at,
-      menu_items!inner(id, title, category, price, available),
+      menu_items!inner(id, title, cuisine, price, available),
       recipe_ingredients(
         id,
         recipe_id,
@@ -1198,8 +1250,13 @@ export async function getRecipes() {
     const menuPrice = Number(r.menu_items?.price ?? 0);
     const foodCostPercentage = menuPrice > 0 ? (costPerYield / menuPrice) * 100 : 0;
 
+    const mi = r.menu_items
+      ? { ...r.menu_items, category: r.menu_items.cuisine || "Menu Item" }
+      : null;
+
     return {
       ...r,
+      menu_items: mi,
       total_cost: Math.round(totalCost * 100) / 100,
       cost_per_yield: Math.round(costPerYield * 100) / 100,
       food_cost_percentage: Math.round(foodCostPercentage * 100) / 100,
@@ -1418,7 +1475,7 @@ export async function deleteRecipeAction(recipeId: string) {
 // ---------- SUPPLIERS & PURCHASING ----------
 
 export async function getSuppliers() {
-  const auth = await requireRole(["owner", "manager", "staff"]);
+  const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId } = auth.context;
 
@@ -1502,7 +1559,7 @@ export async function toggleSupplierActiveAction(supplierId: string, isActive: b
 }
 
 export async function getPurchaseOrders() {
-  const auth = await requireRole(["owner", "manager", "staff"]);
+  const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId } = auth.context;
 
@@ -1733,7 +1790,7 @@ export async function savePurchaseOrderAction(input: {
 }
 
 export async function updatePOStatusAction(poId: string, newStatus: "ordered" | "cancelled") {
-  const auth = await requireRole(["owner", "manager", "staff"]);
+  const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId } = auth.context;
 
@@ -1767,7 +1824,7 @@ export async function updatePOStatusAction(poId: string, newStatus: "ordered" | 
 }
 
 export async function receivePOSourceStockAction(poId: string, items: Array<{ po_item_id: string; receive_qty: number }>) {
-  const auth = await requireRole(["owner", "manager", "staff"]);
+  const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, user } = auth.context;
 
@@ -1825,7 +1882,7 @@ export async function getReservationsAdminAction(filters?: ReservationAdminFilte
 
   let query = supabase
     .from("reservations")
-    .select("*, restaurant_tables(id, label, max_capacity, state)")
+    .select("*, restaurant_tables(id, label, seats, state)")
     .eq("restaurant_id", restaurantId);
 
   if (filters?.date) {
@@ -1864,20 +1921,21 @@ export async function createReservationAdminAction(input: ReservationInputAdmin)
   const date = input.date?.trim();
   const time = input.time?.trim();
 
-  if (!name || !phone || !email || !guests || !date || !time) {
-    return { ok: false, error: "Please complete all required fields (name, phone, email, guests, date, time)." };
+  if (!name || !phone || !guests || !date || !time) {
+    return { ok: false, error: "Please complete required fields (name, phone, guests, date, time)." };
   }
 
   if (input.table_id) {
-    // 1. Verify table belongs to restaurant
+    // 1. Verify table belongs to restaurant and is not out of service
     const { data: tbl } = await supabase
       .from("restaurant_tables")
-      .select("id, max_capacity")
+      .select("id, seats, state")
       .eq("id", input.table_id)
       .eq("restaurant_id", restaurantId)
       .single();
 
     if (!tbl) return { ok: false, error: "Selected table does not belong to this restaurant." };
+    if (tbl.state === "out_of_service") return { ok: false, error: "Selected table is currently out of service." };
 
     // 2. Conflict check
     const { data: conflict } = await supabase
@@ -2192,8 +2250,8 @@ export async function processRefundAdminAction(input: {
   amount?: number;
   reason?: string;
 }) {
-  // STRICT AUTHORIZATION: Owner and Manager ONLY! Staff and Anonymous are rejected!
-  const auth = await requireRole(["owner", "manager"]);
+  // STRICT AUTHORIZATION: Owner ONLY! Manager, Staff and Anonymous are rejected!
+  const auth = await requireRole(["owner"]);
   if (!auth.ok) {
     return { ok: false, error: auth.error || "Financial refund authority required (Owner/Manager only)." };
   }
@@ -2230,7 +2288,7 @@ export async function processRefundAdminAction(input: {
 }
 
 // ============================================================
-// CUSTOMERS, REVIEWS & LOYALTY MODULE ACTIONS
+// CUSTOMERS & REVIEWS MODULE ACTIONS
 // ============================================================
 
 // --- CUSTOMERS ACTIONS ---
@@ -2242,7 +2300,7 @@ export async function getCustomersAdminAction(search?: string, page: number = 1)
 
   let query = supabase
     .from("customers")
-    .select("*, loyalty_accounts(balance, lifetime_points)", { count: "exact" })
+    .select("*", { count: "exact" })
     .eq("restaurant_id", restaurantId);
 
   if (search && search.trim()) {
@@ -2296,11 +2354,7 @@ export async function getCustomerDetailAdminAction(customerId: string) {
 
   const { data: customer, error } = await supabase
     .from("customers")
-    .select(`
-      *,
-      loyalty_accounts(*),
-      loyalty_transactions(*)
-    `)
+    .select("*")
     .eq("id", customerId)
     .eq("restaurant_id", restaurantId)
     .single();
@@ -2445,139 +2499,7 @@ export async function updateReviewStatusAdminAction(reviewId: string, status: "p
   return { ok: true };
 }
 
-// --- LOYALTY ACTIONS ---
 
-export async function getLoyaltyOverviewAdminAction() {
-  const auth = await requireRole(["owner", "manager", "staff"]);
-  if (!auth.ok) return { ok: false, error: auth.error };
-  const { supabase, restaurantId } = auth.context;
-
-  const [accountsRes, txRes] = await Promise.all([
-    supabase
-      .from("loyalty_accounts")
-      .select("balance, lifetime_points")
-      .eq("restaurant_id", restaurantId),
-    supabase
-      .from("loyalty_transactions")
-      .select("type, points")
-      .eq("restaurant_id", restaurantId),
-  ]);
-
-  const accounts = accountsRes.data || [];
-  const transactions = txRes.data || [];
-
-  const totalLoyaltyCustomers = accounts.length;
-  const currentOutstandingPoints = accounts.reduce((acc, a) => acc + (a.balance || 0), 0);
-
-  let totalIssued = 0;
-  let totalRedeemed = 0;
-
-  transactions.forEach((tx) => {
-    if (tx.type === "earn" || (tx.type === "adjustment" && tx.points > 0)) {
-      totalIssued += Math.abs(tx.points);
-    } else if (tx.type === "redeem" || (tx.type === "adjustment" && tx.points < 0)) {
-      totalRedeemed += Math.abs(tx.points);
-    }
-  });
-
-  return {
-    ok: true,
-    data: {
-      totalLoyaltyCustomers,
-      totalIssued,
-      totalRedeemed,
-      currentOutstandingPoints,
-    },
-  };
-}
-
-export async function getLoyaltyCustomersAdminAction(queryStr?: string) {
-  const auth = await requireRole(["owner", "manager", "staff"]);
-  if (!auth.ok) return { ok: false, error: auth.error, data: [] };
-  const { supabase, restaurantId } = auth.context;
-
-  let query = supabase
-    .from("loyalty_accounts")
-    .select(`
-      *,
-      customers(id, name, phone, email, visits, last_visit_at)
-    `)
-    .eq("restaurant_id", restaurantId);
-
-  const { data, error } = await query.order("balance", { ascending: false });
-  if (error) return { ok: false, error: error.message, data: [] };
-
-  let list = data || [];
-  if (queryStr && queryStr.trim()) {
-    const term = queryStr.trim().toLowerCase();
-    list = list.filter((a) =>
-      a.customers?.name?.toLowerCase().includes(term) ||
-      a.customers?.phone?.toLowerCase().includes(term) ||
-      a.customers?.email?.toLowerCase().includes(term)
-    );
-  }
-
-  return { ok: true, data: list };
-}
-
-export async function getCustomerLoyaltyHistoryAdminAction(customerId: string) {
-  const auth = await requireRole(["owner", "manager", "staff"]);
-  if (!auth.ok) return { ok: false, error: auth.error };
-  const { supabase, restaurantId } = auth.context;
-
-  const { data: transactions, error } = await supabase
-    .from("loyalty_transactions")
-    .select("*")
-    .eq("restaurant_id", restaurantId)
-    .eq("customer_id", customerId)
-    .order("created_at", { ascending: false });
-
-  if (error) return { ok: false, error: error.message, data: [] };
-  return { ok: true, data: transactions || [] };
-}
-
-export async function adjustLoyaltyPointsAdminAction(input: {
-  customerId: string;
-  points: number;
-  reason: string;
-}) {
-  const auth = await requireRole(["owner", "manager"]);
-  if (!auth.ok) {
-    return { ok: false, error: auth.error || "Manager or Owner authority required for manual loyalty adjustments." };
-  }
-  const { restaurantId, user } = auth.context;
-
-  if (!input.customerId || !input.reason || !input.reason.trim()) {
-    return { ok: false, error: "Customer ID and adjustment reason are required." };
-  }
-
-  if (!input.points || input.points === 0) {
-    return { ok: false, error: "Adjustment points cannot be zero." };
-  }
-
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const admin = createAdminClient();
-
-  const { data, error } = await admin.rpc("adjust_loyalty_points_atomic", {
-    p_restaurant_id: restaurantId,
-    p_customer_id: input.customerId,
-    p_points: Math.round(Number(input.points)),
-    p_reason: input.reason.trim(),
-    p_created_by: user.id,
-  });
-
-  if (error || !data) {
-    return { ok: false, error: error?.message || "Failed to adjust loyalty points." };
-  }
-
-  if (data.ok === false) {
-    return { ok: false, error: data.error || data.message || "Failed to adjust loyalty points." };
-  }
-
-  revalidatePath("/admin/loyalty");
-  revalidatePath("/admin/customers");
-  return { ok: true, result: data };
-}
 
 // --- STAFF MANAGEMENT & ROLES ACTIONS ---
 
@@ -2585,12 +2507,13 @@ export async function getStaffOverviewAdminAction() {
   const auth = await requireRole(["owner", "manager", "staff"]);
   if (!auth.ok) return { ok: false, error: auth.error || "Not authorized", data: [], invitations: [], stats: { totalStaff: 0, activeStaff: 0, ownersCount: 0, managersCount: 0, pendingInvites: 0 } };
 
-  const { restaurantId, role: currentRole } = auth.context;
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const admin = createAdminClient();
+  const { restaurantId, role: currentRole, supabase, user: callerUser } = auth.context;
+  const { serviceRoleConfigured, createAdminClient } = await import("@/lib/supabase/admin");
+  const useAdmin = serviceRoleConfigured();
+  const dbClient = useAdmin ? createAdminClient() : supabase;
 
   // Fetch memberships for active restaurant
-  const { data: memberships, error: memErr } = await admin
+  const { data: memberships, error: memErr } = await dbClient
     .from("restaurant_memberships")
     .select("*")
     .eq("restaurant_id", restaurantId)
@@ -2601,7 +2524,7 @@ export async function getStaffOverviewAdminAction() {
   }
 
   // Fetch invitations
-  const { data: invs } = await admin
+  const { data: invs } = await dbClient
     .from("staff_invitations")
     .select("*")
     .eq("restaurant_id", restaurantId)
@@ -2612,24 +2535,35 @@ export async function getStaffOverviewAdminAction() {
   const userMap = new Map<string, { email: string; fullName: string; createdAt: string; lastSignInAt: string | null }>();
 
   if (userIds.length > 0) {
-    const { data: authUsers } = await admin.auth.admin.listUsers();
-    if (authUsers && authUsers.users) {
-      for (const u of authUsers.users) {
-        if (userIds.includes(u.id)) {
-          const fullName = u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split("@")[0] || "Staff Member";
-          userMap.set(u.id, {
-            email: u.email || "",
-            fullName,
-            createdAt: u.created_at,
-            lastSignInAt: u.last_sign_in_at || null,
-          });
+    if (useAdmin) {
+      const adminClient = dbClient as ReturnType<typeof createAdminClient>;
+      const { data: authUsers } = await adminClient.auth.admin.listUsers();
+      if (authUsers && authUsers.users) {
+        for (const u of authUsers.users) {
+          if (userIds.includes(u.id)) {
+            const fullName = u.user_metadata?.full_name || u.user_metadata?.name || u.email?.split("@")[0] || "Staff Member";
+            userMap.set(u.id, {
+              email: u.email || "",
+              fullName,
+              createdAt: u.created_at,
+              lastSignInAt: u.last_sign_in_at || null,
+            });
+          }
         }
       }
+    } else if (callerUser && userIds.includes(callerUser.id)) {
+      const callerName = callerUser.user_metadata?.full_name || callerUser.user_metadata?.name || callerUser.email?.split("@")[0] || "Staff Member";
+      userMap.set(callerUser.id, {
+        email: callerUser.email || "",
+        fullName: callerName,
+        createdAt: callerUser.created_at || new Date().toISOString(),
+        lastSignInAt: callerUser.last_sign_in_at || null,
+      });
     }
   }
 
   const staffList = (memberships || []).map((m) => {
-    const uInfo = userMap.get(m.user_id) || { email: "Unknown", fullName: "Staff Member", createdAt: m.created_at, lastSignInAt: null };
+    const uInfo = userMap.get(m.user_id) || { email: "Staff Member", fullName: `Staff Member (${m.role})`, createdAt: m.created_at, lastSignInAt: null };
     return {
       id: m.id,
       userId: m.user_id,
@@ -2669,7 +2603,7 @@ export async function getStaffOverviewAdminAction() {
     data: staffList,
     invitations: invitationsList,
     currentRole,
-    currentUserId: auth.context.user.id,
+    currentUserId: callerUser.id,
     stats,
   };
 }
@@ -2678,7 +2612,7 @@ export async function updateStaffRoleAdminAction(targetUserId: string, newRole: 
   const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
 
-  const { restaurantId, user: caller, role: callerRole } = auth.context;
+  const { restaurantId, user: caller, role: callerRole, supabase } = auth.context;
 
   if (caller.id === targetUserId) {
     return { ok: false, error: "Members cannot modify their own role" };
@@ -2688,11 +2622,11 @@ export async function updateStaffRoleAdminAction(targetUserId: string, newRole: 
     return { ok: false, error: "Invalid role specified" };
   }
 
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const admin = createAdminClient();
+  const { serviceRoleConfigured, createAdminClient } = await import("@/lib/supabase/admin");
+  const dbClient = serviceRoleConfigured() ? createAdminClient() : supabase;
 
   // Target membership verification
-  const { data: targetMem } = await admin
+  const { data: targetMem } = await dbClient
     .from("restaurant_memberships")
     .select("*")
     .eq("restaurant_id", restaurantId)
@@ -2710,7 +2644,7 @@ export async function updateStaffRoleAdminAction(targetUserId: string, newRole: 
 
   // Last owner protection
   if (targetMem.role === "owner" && newRole !== "owner") {
-    const { count } = await admin
+    const { count } = await dbClient
       .from("restaurant_memberships")
       .select("*", { count: "exact", head: true })
       .eq("restaurant_id", restaurantId)
@@ -2722,7 +2656,7 @@ export async function updateStaffRoleAdminAction(targetUserId: string, newRole: 
     }
   }
 
-  const { error } = await admin
+  const { error } = await dbClient
     .from("restaurant_memberships")
     .update({ role: newRole, updated_at: new Date().toISOString() })
     .eq("id", targetMem.id);
@@ -2737,7 +2671,7 @@ export async function toggleStaffStatusAdminAction(targetUserId: string, newStat
   const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
 
-  const { restaurantId, user: caller, role: callerRole } = auth.context;
+  const { restaurantId, user: caller, role: callerRole, supabase } = auth.context;
 
   if (caller.id === targetUserId) {
     return { ok: false, error: "Members cannot deactivate their own membership" };
@@ -2747,10 +2681,10 @@ export async function toggleStaffStatusAdminAction(targetUserId: string, newStat
     return { ok: false, error: "Invalid status specified" };
   }
 
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const admin = createAdminClient();
+  const { serviceRoleConfigured, createAdminClient } = await import("@/lib/supabase/admin");
+  const dbClient = serviceRoleConfigured() ? createAdminClient() : supabase;
 
-  const { data: targetMem } = await admin
+  const { data: targetMem } = await dbClient
     .from("restaurant_memberships")
     .select("*")
     .eq("restaurant_id", restaurantId)
@@ -2766,7 +2700,7 @@ export async function toggleStaffStatusAdminAction(targetUserId: string, newStat
   }
 
   if (targetMem.role === "owner" && newStatus === "inactive") {
-    const { count } = await admin
+    const { count } = await dbClient
       .from("restaurant_memberships")
       .select("*", { count: "exact", head: true })
       .eq("restaurant_id", restaurantId)
@@ -2778,7 +2712,7 @@ export async function toggleStaffStatusAdminAction(targetUserId: string, newStat
     }
   }
 
-  const { error } = await admin
+  const { error } = await dbClient
     .from("restaurant_memberships")
     .update({ status: newStatus, updated_at: new Date().toISOString() })
     .eq("id", targetMem.id);
@@ -2793,7 +2727,7 @@ export async function createStaffInvitationAdminAction(email: string, role: Role
   const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
 
-  const { restaurantId, user: caller, role: callerRole } = auth.context;
+  const { restaurantId, user: caller, role: callerRole, supabase } = auth.context;
 
   const cleanEmail = email?.trim().toLowerCase();
   if (!cleanEmail || !cleanEmail.includes("@")) {
@@ -2808,28 +2742,32 @@ export async function createStaffInvitationAdminAction(email: string, role: Role
     return { ok: false, error: "Only an owner can invite another owner" };
   }
 
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const admin = createAdminClient();
+  const { serviceRoleConfigured, createAdminClient } = await import("@/lib/supabase/admin");
+  const useAdmin = serviceRoleConfigured();
+  const dbClient = useAdmin ? createAdminClient() : supabase;
 
   // Check if user is already a member
-  const { data: existingUsers } = await admin.auth.admin.listUsers();
-  const matchedUser = existingUsers?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+  if (useAdmin) {
+    const adminClient = dbClient as ReturnType<typeof createAdminClient>;
+    const { data: existingUsers } = await adminClient.auth.admin.listUsers();
+    const matchedUser = existingUsers?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
 
-  if (matchedUser) {
-    const { data: existingMem } = await admin
-      .from("restaurant_memberships")
-      .select("id, status")
-      .eq("restaurant_id", restaurantId)
-      .eq("user_id", matchedUser.id)
-      .maybeSingle();
+    if (matchedUser) {
+      const { data: existingMem } = await dbClient
+        .from("restaurant_memberships")
+        .select("id, status")
+        .eq("restaurant_id", restaurantId)
+        .eq("user_id", matchedUser.id)
+        .maybeSingle();
 
-    if (existingMem && existingMem.status === "active") {
-      return { ok: false, error: "User is already an active member of this restaurant" };
+      if (existingMem && existingMem.status === "active") {
+        return { ok: false, error: "User is already an active member of this restaurant" };
+      }
     }
   }
 
   // Check if pending invitation already exists
-  const { data: existingInv } = await admin
+  const { data: existingInv } = await dbClient
     .from("staff_invitations")
     .select("id")
     .eq("restaurant_id", restaurantId)
@@ -2844,7 +2782,7 @@ export async function createStaffInvitationAdminAction(email: string, role: Role
   const crypto = await import("crypto");
   const token = crypto.randomBytes(32).toString("hex");
 
-  const { error: insertErr } = await admin.from("staff_invitations").insert({
+  const { error: insertErr } = await dbClient.from("staff_invitations").insert({
     restaurant_id: restaurantId,
     email: cleanEmail,
     role,
@@ -2863,12 +2801,12 @@ export async function revokeStaffInvitationAdminAction(invitationId: string) {
   const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
 
-  const { restaurantId } = auth.context;
+  const { restaurantId, supabase } = auth.context;
 
-  const { createAdminClient } = await import("@/lib/supabase/admin");
-  const admin = createAdminClient();
+  const { serviceRoleConfigured, createAdminClient } = await import("@/lib/supabase/admin");
+  const dbClient = serviceRoleConfigured() ? createAdminClient() : supabase;
 
-  const { error } = await admin
+  const { error } = await dbClient
     .from("staff_invitations")
     .update({ status: "revoked", updated_at: new Date().toISOString() })
     .eq("id", invitationId)
@@ -3122,33 +3060,12 @@ export async function simulateMarketplaceOrderIngestionAdminAction(input: {
     input.notes ? ` | Notes: ${input.notes.trim()}` : ""
   }`;
 
-  // Resolve table for online delivery session
-  const { data: existingTable } = await supabase
-    .from("restaurant_tables")
-    .select("id")
-    .eq("restaurant_id", restaurantId)
-    .limit(1)
-    .maybeSingle();
-
-  let targetTableId = existingTable?.id;
-  if (!targetTableId) {
-    const { data: createdTable } = await supabase
-      .from("restaurant_tables")
-      .insert({
-        restaurant_id: restaurantId,
-        label: "Delivery Desk",
-      })
-      .select("id")
-      .single();
-    targetTableId = createdTable?.id;
-  }
-
-  // Create a dining_session for the online delivery order
+  // Create a dining_session for the online delivery order (table_id: null — no physical table)
   const { data: newSess, error: sessErr } = await supabase
     .from("dining_sessions")
     .insert({
       restaurant_id: restaurantId,
-      table_id: targetTableId,
+      table_id: null,
       customer_name: cleanCustomer,
       phone: customerPhone,
       status: "open",
@@ -3203,11 +3120,377 @@ export async function getAvailableMenuItemsAdminAction() {
 
   const { data, error } = await supabase
     .from("menu_items")
-    .select("id, title, price, available, category, prep_minutes")
+    .select("id, title, price, available, cuisine, prep_minutes")
     .eq("restaurant_id", restaurantId)
     .eq("available", true)
     .order("title", { ascending: true });
 
   if (error) return { ok: false, error: error.message, data: [] };
-  return { ok: true, data: data || [] };
+  const mapped = (data || []).map((item) => ({
+    ...item,
+    category: item.cuisine,
+  }));
+  return { ok: true, data: mapped };
+}
+
+// ============================================================================
+// STAFF & EMPLOYEE MANAGEMENT ACTIONS
+// ============================================================================
+
+export type EmployeeRecordInput = {
+  employee_code?: string;
+  full_name: string;
+  phone: string;
+  email?: string | null;
+  date_of_birth?: string | null;
+  gender?: string | null;
+  address?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  department: string;
+  designation: string;
+  employment_type: "full_time" | "part_time" | "contract" | "temporary" | "intern";
+  joining_date: string;
+  status?: "active" | "inactive" | "pending";
+  notes?: string | null;
+  user_id?: string | null;
+};
+
+export async function getEmployeesAdminAction() {
+  const auth = await requireRole(["owner", "manager", "staff"]);
+  if (!auth.ok) {
+    return {
+      ok: false,
+      error: auth.error || "Not authorized",
+      data: [],
+      stats: { totalEmployees: 0, activeEmployees: 0, pendingEmployees: 0, withLumiereAccess: 0 },
+    };
+  }
+
+  const { restaurantId, supabase } = auth.context;
+  const { serviceRoleConfigured, createAdminClient } = await import("@/lib/supabase/admin");
+  const useAdmin = serviceRoleConfigured();
+  const dbClient = useAdmin ? createAdminClient() : supabase;
+
+  // 1. Fetch employee records for active restaurant
+  const { data: employees, error } = await dbClient
+    .from("employee_records")
+    .select("*")
+    .eq("restaurant_id", restaurantId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    return {
+      ok: false,
+      error: error.message,
+      data: [],
+      stats: { totalEmployees: 0, activeEmployees: 0, pendingEmployees: 0, withLumiereAccess: 0 },
+    };
+  }
+
+  // 2. Fetch memberships to attach role/system status for linked user_ids
+  const userIds = (employees || []).map((e) => e.user_id).filter(Boolean) as string[];
+  const membershipMap = new Map<string, { role: Role; status: string }>();
+
+  if (userIds.length > 0) {
+    const { data: mems } = await dbClient
+      .from("restaurant_memberships")
+      .select("user_id, role, status")
+      .eq("restaurant_id", restaurantId)
+      .in("user_id", userIds);
+
+    for (const m of mems || []) {
+      membershipMap.set(m.user_id, { role: m.role as Role, status: m.status });
+    }
+  }
+
+  // 3. Optional user email mapping
+  const userEmailMap = new Map<string, string>();
+  if (userIds.length > 0 && useAdmin) {
+    const adminClient = dbClient as ReturnType<typeof createAdminClient>;
+    const { data: authUsers } = await adminClient.auth.admin.listUsers();
+    if (authUsers?.users) {
+      for (const u of authUsers.users) {
+        if (userIds.includes(u.id)) {
+          userEmailMap.set(u.id, u.email || "");
+        }
+      }
+    }
+  }
+
+  const mapped = (employees || []).map((emp) => {
+    const mem = emp.user_id ? membershipMap.get(emp.user_id) : null;
+    return {
+      ...emp,
+      linkedUserEmail: emp.user_id ? (userEmailMap.get(emp.user_id) || emp.email || null) : null,
+      linkedUserRole: mem ? mem.role : null,
+      linkedUserMembershipStatus: mem ? mem.status : null,
+    };
+  });
+
+  const totalEmployees = mapped.length;
+  const activeEmployees = mapped.filter((e) => e.status === "active").length;
+  const pendingEmployees = mapped.filter((e) => e.status === "pending").length;
+  const withLumiereAccess = mapped.filter((e) => e.user_id !== null).length;
+
+  return {
+    ok: true,
+    data: mapped,
+    stats: { totalEmployees, activeEmployees, pendingEmployees, withLumiereAccess },
+  };
+}
+
+export async function createEmployeeAdminAction(input: EmployeeRecordInput) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Not authorized" };
+  const { restaurantId, supabase } = auth.context;
+
+  const fullName = input.full_name?.trim();
+  if (!fullName) return { ok: false, error: "Full name is required" };
+  if (fullName.length > 100) return { ok: false, error: "Full name cannot exceed 100 characters" };
+
+  const phone = input.phone?.trim();
+  if (!phone) return { ok: false, error: "Phone number is required" };
+  if (phone.length > 30) return { ok: false, error: "Phone number cannot exceed 30 characters" };
+
+  const department = input.department?.trim();
+  if (!department) return { ok: false, error: "Department is required" };
+
+  const designation = input.designation?.trim();
+  if (!designation) return { ok: false, error: "Designation is required" };
+
+  const validTypes = ["full_time", "part_time", "contract", "temporary", "intern"];
+  if (!validTypes.includes(input.employment_type)) {
+    return { ok: false, error: "Invalid employment type selected" };
+  }
+
+  const joiningDate = input.joining_date?.trim();
+  if (!joiningDate) return { ok: false, error: "Joining date is required" };
+
+  // Email format validation if provided
+  let email: string | null = null;
+  if (input.email) {
+    const trimmedEmail = input.email.trim();
+    if (trimmedEmail) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        return { ok: false, error: "Invalid email address format" };
+      }
+      email = trimmedEmail.toLowerCase();
+    }
+  }
+
+  // Employee Code generation / validation
+  let employeeCode = input.employee_code?.trim().toUpperCase();
+  if (!employeeCode) {
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+    employeeCode = `EMP-${randomSuffix}`;
+  }
+
+  // Check unique employee_code for this restaurant
+  const { data: existingCode } = await supabase
+    .from("employee_records")
+    .select("id")
+    .eq("restaurant_id", restaurantId)
+    .eq("employee_code", employeeCode)
+    .maybeSingle();
+
+  if (existingCode) {
+    return { ok: false, error: `Employee Code "${employeeCode}" already exists in this restaurant.` };
+  }
+
+  const row = {
+    restaurant_id: restaurantId,
+    employee_code: employeeCode,
+    full_name: fullName,
+    phone,
+    email,
+    date_of_birth: input.date_of_birth?.trim() || null,
+    gender: input.gender?.trim() || null,
+    address: input.address?.trim() || null,
+    emergency_contact_name: input.emergency_contact_name?.trim() || null,
+    emergency_contact_phone: input.emergency_contact_phone?.trim() || null,
+    department,
+    designation,
+    employment_type: input.employment_type,
+    joining_date: joiningDate,
+    status: input.status && ["active", "inactive", "pending"].includes(input.status) ? input.status : "active",
+    notes: input.notes?.trim() || null,
+    user_id: input.user_id || null,
+  };
+
+  const { data: created, error } = await supabase
+    .from("employee_records")
+    .insert(row)
+    .select("*")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/staff");
+  return { ok: true, data: created };
+}
+
+export async function updateEmployeeAdminAction(
+  employeeId: string,
+  input: Partial<EmployeeRecordInput>
+) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Not authorized" };
+  const { restaurantId, supabase } = auth.context;
+
+  if (!employeeId) return { ok: false, error: "Employee ID is required" };
+
+  const { data: existingEmp, error: fetchErr } = await supabase
+    .from("employee_records")
+    .select("*")
+    .eq("id", employeeId)
+    .eq("restaurant_id", restaurantId)
+    .single();
+
+  if (fetchErr || !existingEmp) {
+    return { ok: false, error: "Employee record not found" };
+  }
+
+  const patch: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.full_name !== undefined) {
+    const fullName = input.full_name.trim();
+    if (!fullName) return { ok: false, error: "Full name is required" };
+    patch.full_name = fullName;
+  }
+
+  if (input.phone !== undefined) {
+    const phone = input.phone.trim();
+    if (!phone) return { ok: false, error: "Phone number is required" };
+    patch.phone = phone;
+  }
+
+  if (input.email !== undefined) {
+    if (input.email) {
+      const trimmed = input.email.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        return { ok: false, error: "Invalid email format" };
+      }
+      patch.email = trimmed.toLowerCase();
+    } else {
+      patch.email = null;
+    }
+  }
+
+  if (input.employee_code !== undefined && input.employee_code.trim().toUpperCase() !== existingEmp.employee_code) {
+    const newCode = input.employee_code.trim().toUpperCase();
+    const { data: codeCheck } = await supabase
+      .from("employee_records")
+      .select("id")
+      .eq("restaurant_id", restaurantId)
+      .eq("employee_code", newCode)
+      .neq("id", employeeId)
+      .maybeSingle();
+
+    if (codeCheck) {
+      return { ok: false, error: `Employee Code "${newCode}" is already taken.` };
+    }
+    patch.employee_code = newCode;
+  }
+
+  if (input.department !== undefined) patch.department = input.department.trim();
+  if (input.designation !== undefined) patch.designation = input.designation.trim();
+  if (input.employment_type !== undefined) {
+    const validTypes = ["full_time", "part_time", "contract", "temporary", "intern"];
+    if (!validTypes.includes(input.employment_type)) return { ok: false, error: "Invalid employment type" };
+    patch.employment_type = input.employment_type;
+  }
+  if (input.joining_date !== undefined) patch.joining_date = input.joining_date;
+  if (input.date_of_birth !== undefined) patch.date_of_birth = input.date_of_birth ? input.date_of_birth.trim() : null;
+  if (input.gender !== undefined) patch.gender = input.gender ? input.gender.trim() : null;
+  if (input.address !== undefined) patch.address = input.address ? input.address.trim() : null;
+  if (input.emergency_contact_name !== undefined) patch.emergency_contact_name = input.emergency_contact_name ? input.emergency_contact_name.trim() : null;
+  if (input.emergency_contact_phone !== undefined) patch.emergency_contact_phone = input.emergency_contact_phone ? input.emergency_contact_phone.trim() : null;
+  if (input.notes !== undefined) patch.notes = input.notes ? input.notes.trim() : null;
+  if (input.status !== undefined && ["active", "inactive", "pending"].includes(input.status)) {
+    patch.status = input.status;
+  }
+
+  const { error: updateErr } = await supabase
+    .from("employee_records")
+    .update(patch)
+    .eq("id", employeeId)
+    .eq("restaurant_id", restaurantId);
+
+  if (updateErr) return { ok: false, error: updateErr.message };
+
+  revalidatePath("/admin/staff");
+  return { ok: true };
+}
+
+export async function setEmployeeStatusAdminAction(
+  employeeId: string,
+  status: "active" | "inactive" | "pending"
+) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Not authorized" };
+  const { restaurantId, supabase } = auth.context;
+
+  if (!["active", "inactive", "pending"].includes(status)) {
+    return { ok: false, error: "Invalid status" };
+  }
+
+  const { error } = await supabase
+    .from("employee_records")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", employeeId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/staff");
+  return { ok: true };
+}
+
+export async function linkEmployeeUserAdminAction(employeeId: string, targetUserId: string) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Not authorized" };
+  const { restaurantId, supabase } = auth.context;
+
+  // Verify target user is member of restaurant
+  const { data: mem } = await supabase
+    .from("restaurant_memberships")
+    .select("user_id")
+    .eq("restaurant_id", restaurantId)
+    .eq("user_id", targetUserId)
+    .single();
+
+  if (!mem) {
+    return { ok: false, error: "Target user is not a member of this restaurant" };
+  }
+
+  const { error } = await supabase
+    .from("employee_records")
+    .update({ user_id: targetUserId, updated_at: new Date().toISOString() })
+    .eq("id", employeeId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/staff");
+  return { ok: true };
+}
+
+export async function unlinkEmployeeUserAdminAction(employeeId: string) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Not authorized" };
+  const { restaurantId, supabase } = auth.context;
+
+  const { error } = await supabase
+    .from("employee_records")
+    .update({ user_id: null, updated_at: new Date().toISOString() })
+    .eq("id", employeeId)
+    .eq("restaurant_id", restaurantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/admin/staff");
+  return { ok: true };
 }

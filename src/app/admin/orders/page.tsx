@@ -566,7 +566,14 @@ export default function AdminOrdersPage() {
                   };
                   const itemsList = parseItems(order.items);
                   const itemCount = itemsList.reduce((acc, it) => acc + it.quantity, 0);
-                  const tableName = order.dining_sessions?.restaurant_tables?.label || "No table";
+                  const isMarketplace = order.source === "swiggy" || order.source === "zomato";
+                  const tableName = isMarketplace
+                    ? "Online Order"
+                    : order.source === "delivery"
+                    ? "Delivery"
+                    : order.source === "takeaway"
+                    ? "Takeaway"
+                    : order.dining_sessions?.restaurant_tables?.label || "—";
                   const customerName = order.dining_sessions?.customer_name || "Guest";
                   const phone = order.dining_sessions?.phone;
 

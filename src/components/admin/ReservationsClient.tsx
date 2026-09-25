@@ -11,7 +11,8 @@ import {
 type TableInfo = {
   id: string;
   label: string;
-  max_capacity: number;
+  seats?: number;
+  max_capacity?: number;
   state: string;
 };
 
@@ -113,8 +114,8 @@ export default function ReservationsClient({ initialReservations, tables }: Prop
       time: "19:00",
       table_id: "",
       requests: "",
-      deposit_amount: "500",
-      deposit_status: "pending",
+      deposit_amount: "0",
+      deposit_status: "none",
       status: "pending",
     });
     setEditingRes(null);
@@ -193,10 +194,11 @@ export default function ReservationsClient({ initialReservations, tables }: Prop
         )
       );
     } else {
+      const effectiveEmail = formState.email.trim() || `${formState.phone.replace(/[^0-9]/g, "") || "guest"}@reservation.local`;
       const res = await createReservationAdminAction({
         name: formState.name,
         phone: formState.phone,
-        email: formState.email,
+        email: effectiveEmail,
         guests: formState.guests,
         date: formState.date,
         time: formState.time,
@@ -571,14 +573,13 @@ export default function ReservationsClient({ initialReservations, tables }: Prop
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Email Address *</label>
+                  <label className="block text-xs font-medium text-neutral-700 mb-1">Email Address</label>
                   <input
                     type="email"
-                    required
                     value={formState.email}
                     onChange={(e) => setFormState({ ...formState, email: e.target.value })}
                     className="field w-full text-sm py-2 px-3"
-                    placeholder="john@example.com"
+                    placeholder="john@example.com (optional)"
                   />
                 </div>
                 <div>
@@ -627,57 +628,63 @@ export default function ReservationsClient({ initialReservations, tables }: Prop
                     className="field w-full text-sm py-2 px-3"
                   >
                     <option value="">-- Select Table (Optional) --</option>
-                    {tables.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        Table {t.label} (Cap: {t.max_capacity}p, {t.state})
-                      </option>
-                    ))}
+                    {tables
+                      .filter((t) => t.state !== "out_of_service")
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          Table {t.label} (Cap: {t.seats ?? t.max_capacity ?? 4}p, {t.state})
+                        </option>
+                      ))}
                   </select>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Status</label>
-                  <select
-                    value={formState.status}
-                    onChange={(e) => setFormState({ ...formState, status: e.target.value })}
-                    className="field w-full text-sm py-2 px-3"
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="seated">Seated</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
-                    <option value="no_show">No-Show</option>
-                  </select>
-                </div>
+                {editingRes && (
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Status</label>
+                    <select
+                      value={formState.status}
+                      onChange={(e) => setFormState({ ...formState, status: e.target.value })}
+                      className="field w-full text-sm py-2 px-3"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="seated">Seated</option>
+                      <option value="completed">Completed</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="no_show">No-Show</option>
+                    </select>
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Deposit Amount (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={formState.deposit_amount}
-                    onChange={(e) => setFormState({ ...formState, deposit_amount: e.target.value })}
-                    className="field w-full text-sm py-2 px-3"
-                  />
+              {editingRes && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Deposit Amount (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={formState.deposit_amount}
+                      onChange={(e) => setFormState({ ...formState, deposit_amount: e.target.value })}
+                      className="field w-full text-sm py-2 px-3"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-700 mb-1">Deposit Status</label>
+                    <select
+                      value={formState.deposit_status}
+                      onChange={(e) => setFormState({ ...formState, deposit_status: e.target.value })}
+                      className="field w-full text-sm py-2 px-3"
+                    >
+                      <option value="none">None</option>
+                      <option value="pending">Pending</option>
+                      <option value="paid">Paid</option>
+                      <option value="partially_refunded">Partially Refunded</option>
+                      <option value="refunded">Refunded</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-neutral-700 mb-1">Deposit Status</label>
-                  <select
-                    value={formState.deposit_status}
-                    onChange={(e) => setFormState({ ...formState, deposit_status: e.target.value })}
-                    className="field w-full text-sm py-2 px-3"
-                  >
-                    <option value="none">None</option>
-                    <option value="pending">Pending</option>
-                    <option value="paid">Paid</option>
-                    <option value="partially_refunded">Partially Refunded</option>
-                    <option value="refunded">Refunded</option>
-                  </select>
-                </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-xs font-medium text-neutral-700 mb-1">Special Requests / Notes</label>
