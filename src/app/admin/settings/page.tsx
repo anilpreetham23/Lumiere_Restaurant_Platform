@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
-import { Loader2, Check, Lock, ShieldAlert, Palette, Building2, Sliders, Image as ImageIcon } from "lucide-react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { Loader2, Check, Lock, ShieldAlert, Palette, Building2, Sliders, Image as ImageIcon, Upload, RefreshCw, Trash2, Link as LinkIcon } from "lucide-react";
 import BrandingPreview from "@/components/admin/BrandingPreview";
 import {
   getAdminSettingsData,
   updateRestaurantProfile,
   updateRestaurantBranding,
   updateRestaurantSettings,
+  uploadRestaurantAssetAction,
+  resetRestaurantLogoAction,
   type AdminSettingsData,
   type UpdateRestaurantProfileInput,
   type UpdateRestaurantBrandingInput,
@@ -32,6 +34,10 @@ export default function SettingsPage() {
   const [brandingSaving, setBrandingSaving] = useState(false);
   const [brandingSaved, setBrandingSaved] = useState(false);
   const [brandingError, setBrandingError] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [showLogoUrlInput, setShowLogoUrlInput] = useState(false);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
 
   // Section 3: Operations Settings State
   const [settings, setSettings] = useState<AdminSettingsData["settings"] | null>(null);
@@ -124,6 +130,65 @@ export default function SettingsPage() {
       setTimeout(() => setBrandingSaved(false), 3000);
     } else {
       setBrandingError(res.error);
+    }
+  }
+
+  async function handleLogoFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || isReadOnly) return;
+    setLogoError(null);
+
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setLogoError("File size exceeds maximum limit of 5 MB");
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    const allowedMime = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (!allowedMime.includes(file.type.toLowerCase())) {
+      setLogoError("Invalid image format. Only JPG, PNG, and WebP files are allowed.");
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (!ext || !["jpg", "jpeg", "png", "webp"].includes(ext)) {
+      setLogoError("Invalid file extension. Only .jpg, .jpeg, .png, and .webp files are allowed.");
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    setLogoUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("category", "logo");
+
+    const res = await uploadRestaurantAssetAction(formData);
+    setLogoUploading(false);
+    if (e.target) e.target.value = "";
+
+    if (res.ok) {
+      setBranding((prev) => (prev ? { ...prev, logo_url: res.url } : null));
+      setProfile((prev) => (prev ? { ...prev, logo: res.url } : null));
+    } else {
+      setLogoError(res.error);
+    }
+  }
+
+  async function handleResetLogo() {
+    if (isReadOnly || logoUploading) return;
+    setLogoUploading(true);
+    setLogoError(null);
+
+    const res = await resetRestaurantLogoAction();
+    setLogoUploading(false);
+
+    if (res.ok) {
+      setBranding((prev) => (prev ? { ...prev, logo_url: res.logo_url } : null));
+      setProfile((prev) => (prev ? { ...prev, logo: res.logo_url } : null));
+    } else {
+      setLogoError(res.error);
     }
   }
 
@@ -551,16 +616,17 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-serif text-base font-semibold text-ink">Restaurant Logo & Watermark</h3>
-                  <p className="text-xs text-neutral-500">Public logo identity and background watermark treatment</p>
+                  <p className="text-xs text-neutral-500">Upload custom logo (Max 5 MB, JPG/PNG/WebP)</p>
                 </div>
                 {branding.logo_url && branding.logo_url !== "/Shinchan.jpg" && (
                   <button
                     type="button"
-                    disabled={isReadOnly}
-                    onClick={() => setBranding({ ...branding, logo_url: "/Shinchan.jpg" })}
-                    className="text-xs text-wine hover:underline font-medium cursor-pointer"
+                    disabled={isReadOnly || logoUploading}
+                    onClick={handleResetLogo}
+                    className="text-xs text-wine hover:underline font-medium cursor-pointer flex items-center gap-1 disabled:opacity-50"
                   >
-                    Reset to Default Logo
+                    <RefreshCw size={12} className={logoUploading ? "animate-spin" : ""} />
+                    <span>Reset to Default Logo</span>
                   </button>
                 )}
               </div>
@@ -568,7 +634,7 @@ export default function SettingsPage() {
               <div className="grid sm:grid-cols-3 gap-4 text-xs items-start">
                 {/* Logo Preview Card */}
                 <div className="bg-cream/60 rounded-xl p-3 border border-cream2 flex flex-col items-center justify-center text-center">
-                  <div className="w-16 h-16 rounded-xl bg-white border border-amber-200/60 p-1 flex items-center justify-center shadow-xs overflow-hidden mb-2">
+                  <div className="w-20 h-20 rounded-xl bg-white border border-amber-200/60 p-1.5 flex items-center justify-center shadow-xs overflow-hidden mb-2 relative">
                     <img
                       src={branding.logo_url || "/Shinchan.jpg"}
                       alt="Restaurant Logo"
@@ -577,6 +643,11 @@ export default function SettingsPage() {
                         (e.target as HTMLImageElement).src = "/Shinchan.jpg";
                       }}
                     />
+                    {logoUploading && (
+                      <div className="absolute inset-0 bg-white/80 backdrop-blur-xs flex items-center justify-center">
+                        <Loader2 size={18} className="animate-spin text-wine" />
+                      </div>
+                    )}
                   </div>
                   <span className="text-[0.68rem] font-semibold text-neutral-700">{profile?.name}</span>
                   <span className="text-[0.6rem] font-medium text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-full mt-1">
@@ -584,25 +655,76 @@ export default function SettingsPage() {
                   </span>
                 </div>
 
-                {/* Logo URL Input */}
+                {/* Logo Upload & Controls */}
                 <div className="sm:col-span-2 space-y-3">
-                  <div>
-                    <label htmlFor="branding-logo-url" className="block font-medium mb-1 text-neutral-700">
-                      Custom Logo URL
-                    </label>
+                  <div className="space-y-2">
+                    <label className="block font-medium text-neutral-700">Logo Image File</label>
+
                     <input
-                      id="branding-logo-url"
-                      type="text"
-                      value={branding.logo_url ?? ""}
-                      disabled={isReadOnly}
-                      onChange={(e) => setBranding({ ...branding, logo_url: e.target.value || null })}
-                      className="field font-mono text-xs"
-                      placeholder="https://example.com/logo.png or /Shinchan.jpg"
+                      type="file"
+                      ref={logoFileInputRef}
+                      onChange={handleLogoFileSelect}
+                      accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                      className="hidden"
+                      disabled={isReadOnly || logoUploading}
                     />
-                    <p className="text-[0.65rem] text-neutral-400 mt-1">
-                      PNG, JPG, WebP, SVG supported. Leave empty to use default Shinchan logo.
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isReadOnly || logoUploading}
+                        onClick={() => logoFileInputRef.current?.click()}
+                        className="px-3.5 py-2 bg-wine hover:bg-wine-dark text-white rounded-lg font-semibold shadow-2xs transition flex items-center gap-1.5 disabled:opacity-50 text-xs cursor-pointer"
+                      >
+                        {logoUploading ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Upload size={14} />
+                        )}
+                        <span>{branding.logo_url && branding.logo_url !== "/Shinchan.jpg" ? "Replace Logo" : "Upload Logo"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={isReadOnly || logoUploading}
+                        onClick={handleResetLogo}
+                        className="px-3 py-2 bg-cream hover:bg-cream2 text-neutral-700 rounded-lg font-medium border border-cream2 transition flex items-center gap-1 disabled:opacity-50 text-xs cursor-pointer"
+                      >
+                        <RefreshCw size={13} />
+                        <span>Reset Default</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowLogoUrlInput(!showLogoUrlInput)}
+                        className="px-2.5 py-2 text-neutral-500 hover:text-neutral-700 underline text-xs cursor-pointer"
+                      >
+                        {showLogoUrlInput ? "Hide URL Input" : "Use Image URL"}
+                      </button>
+                    </div>
+
+                    {logoError && <p className="text-xs text-wine font-medium mt-1">{logoError}</p>}
+                    <p className="text-[0.65rem] text-neutral-400">
+                      Supported: JPG, PNG, WebP (Max 5 MB). Uploaded logos are automatically saved to your restaurant branding.
                     </p>
                   </div>
+
+                  {showLogoUrlInput && (
+                    <div>
+                      <label htmlFor="branding-logo-url" className="block font-medium mb-1 text-neutral-700">
+                        Custom Image URL (Secondary / Legacy)
+                      </label>
+                      <input
+                        id="branding-logo-url"
+                        type="text"
+                        value={branding.logo_url ?? ""}
+                        disabled={isReadOnly}
+                        onChange={(e) => setBranding({ ...branding, logo_url: e.target.value || null })}
+                        className="field font-mono text-xs"
+                        placeholder="https://example.com/logo.png"
+                      />
+                    </div>
+                  )}
 
                   {/* Background Watermark Controls */}
                   <div className="grid sm:grid-cols-2 gap-3 pt-2">

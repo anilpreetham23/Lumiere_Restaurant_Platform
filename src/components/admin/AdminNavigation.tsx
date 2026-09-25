@@ -63,7 +63,7 @@ type Props = {
 type NavItem = {
   href: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   badge?: string;
 };
 
@@ -71,6 +71,29 @@ type NavGroup = {
   label: string;
   items: NavItem[];
 };
+
+function hexToRgba(hex: string | undefined, alpha: number, fallbackRgb = "122, 46, 53"): string {
+  if (!hex || !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hex)) {
+    return `rgba(${fallbackRgb}, ${alpha})`;
+  }
+  let c = hex.substring(1);
+  if (c.length === 3) {
+    c = c.split("").map((x) => x + x).join("");
+  }
+  const num = parseInt(c, 16);
+  return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha})`;
+}
+
+function getLuminance(hex: string | undefined): number {
+  if (!hex || !/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hex)) return 0;
+  let c = hex.substring(1);
+  if (c.length === 3) c = c.split("").map((x) => x + x).join("");
+  const num = parseInt(c, 16);
+  const r = (num >> 16) & 255;
+  const g = (num >> 8) & 255;
+  const b = num & 255;
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
 
 export function AdminNavigation({
   restaurantId,
@@ -95,14 +118,47 @@ export function AdminNavigation({
     return branding || DEFAULT_RESTAURANT_BRANDING;
   }, [branding]);
 
+  const primary = activeBranding.primary_color || "#7a2e35";
+  const secondary = activeBranding.secondary_color || "#16130f";
+  const accent = activeBranding.accent_color || "#c9a45c";
+
+  // Luminance & Safety Derivations
+  const isSecondaryLight = getLuminance(secondary) > 0.45;
+  const isPrimaryLight = getLuminance(primary) > 0.45;
+  const isAccentTooDark = getLuminance(accent) < 0.25;
+
+  const safeAccent = isAccentTooDark ? "#c9a45c" : accent;
+  const safeActiveBg = isPrimaryLight ? "#1e293b" : primary;
+  const safeActiveText = isPrimaryLight ? primary : "#ffffff";
+  const safeActiveIcon = isPrimaryLight ? primary : safeAccent;
+
+  // Always dark sidebar base foundation
+  const sidebarTop = isSecondaryLight
+    ? "rgba(15, 23, 42, 0.98)"
+    : hexToRgba(secondary, 0.95, "15, 23, 42");
+
+  const sidebarBottom = hexToRgba(primary, isPrimaryLight ? 0.20 : 0.35, "122, 46, 53");
+
+  const sidebarGradient = `linear-gradient(180deg, ${sidebarTop} 0%, rgba(15, 23, 42, 0.96) 65%, ${sidebarBottom} 100%)`;
+
   const themeVars = useMemo(() => {
     return {
-      "--restaurant-primary": activeBranding.primary_color,
-      "--restaurant-secondary": activeBranding.secondary_color,
-      "--restaurant-accent": activeBranding.accent_color,
-      "--restaurant-background": activeBranding.background_color,
+      "--restaurant-primary": primary,
+      "--restaurant-secondary": secondary,
+      "--restaurant-accent": accent,
+      "--restaurant-surface": "#f8f7f4",
+      "--restaurant-surface-muted": hexToRgba(primary, 0.04),
+      "--restaurant-primary-rgba10": hexToRgba(primary, 0.10),
+      "--restaurant-primary-rgba20": hexToRgba(primary, 0.20),
+      "--restaurant-accent-rgba20": hexToRgba(safeAccent, 0.20),
+      "--restaurant-accent-rgba30": hexToRgba(safeAccent, 0.30),
+      "--restaurant-sidebar-bg": sidebarGradient,
+      "--restaurant-sidebar-border": hexToRgba(safeAccent, 0.22),
+      "--restaurant-sidebar-hover": hexToRgba(safeAccent, 0.12),
+      "--restaurant-border": hexToRgba(primary, 0.18),
+      "--restaurant-workspace-glow": `radial-gradient(ellipse 90% 50% at 50% -10%, ${hexToRgba(primary, 0.07)}, transparent 70%)`,
     } as React.CSSProperties;
-  }, [activeBranding]);
+  }, [primary, secondary, accent, sidebarGradient, safeAccent]);
 
   // Deduplicate restaurant memberships by unique restaurant_id
   const uniqueMemberships = useMemo(() => {
@@ -267,14 +323,17 @@ export function AdminNavigation({
   const renderNavGroup = (group: NavGroup, isCollapsedSidebar: boolean) => (
     <div key={group.label} className="mb-4">
       {!isCollapsedSidebar ? (
-        <div className="px-3 pt-2 pb-1.5 text-[10px] font-bold text-amber-400/80 tracking-widest uppercase">
+        <div
+          className="px-3 pt-2 pb-1.5 text-[10px] font-bold tracking-widest uppercase transition-colors"
+          style={{ color: hexToRgba(safeAccent, 0.9) }}
+        >
           {group.label}
         </div>
       ) : (
-        <div className="my-2 border-t border-slate-800/60" />
+        <div className="my-2 border-t" style={{ borderColor: "var(--restaurant-sidebar-border)" }} />
       )}
       <div className="space-y-1">
-          {group.items.map((item) => {
+        {group.items.map((item) => {
           const isActive = isRouteActive(item.href);
           const Icon = item.icon;
           return (
@@ -286,23 +345,35 @@ export function AdminNavigation({
               style={
                 isActive
                   ? {
-                      backgroundColor: activeBranding.primary_color,
-                      borderLeftColor: activeBranding.accent_color,
+                      backgroundColor: safeActiveBg,
+                      color: safeActiveText,
+                      borderLeftColor: safeAccent,
+                      boxShadow: `0 2px 8px ${hexToRgba(primary, 0.35)}`,
                     }
                   : undefined
               }
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                 isActive
-                  ? "text-white font-semibold shadow-sm border-l-2"
-                  : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+                  ? "font-semibold shadow-sm border-l-2"
+                  : "text-slate-300 hover:text-white hover:bg-white/10"
               } ${isCollapsedSidebar ? "justify-center px-0" : ""}`}
             >
-              <Icon className={`w-4 h-4 shrink-0 ${isActive ? "text-gold" : "text-slate-400"}`} />
+              <Icon
+                className={`w-4 h-4 shrink-0 transition-colors ${isActive ? "" : "text-slate-400"}`}
+                style={isActive ? { color: safeActiveIcon } : undefined}
+              />
               {!isCollapsedSidebar && (
                 <div className="flex items-center justify-between flex-1 min-w-0">
                   <span className="truncate">{item.label}</span>
                   {item.badge && (
-                    <span className="ml-2 px-1.5 py-0.5 text-[9px] font-bold bg-amber-500/20 text-amber-300 rounded border border-amber-500/30 whitespace-nowrap">
+                    <span
+                      className="ml-2 px-1.5 py-0.5 text-[9px] font-bold rounded border whitespace-nowrap"
+                      style={{
+                        backgroundColor: hexToRgba(safeAccent, 0.2),
+                        color: safeAccent,
+                        borderColor: hexToRgba(safeAccent, 0.35),
+                      }}
+                    >
                       {item.badge}
                     </span>
                   )}
@@ -316,7 +387,7 @@ export function AdminNavigation({
   );
 
   return (
-    <div className="min-h-screen bg-[#faf8f5] text-slate-800 flex flex-col font-sans" style={themeVars}>
+    <div className="min-h-screen text-slate-800 flex flex-col font-sans transition-all duration-300" style={themeVars}>
       {/* Realtime Marketplace Order Alert Banner */}
       {activeAlert && (
         <div className="bg-gradient-to-r from-amber-600 via-wine to-amber-700 text-white shadow-md border-b border-amber-500/30 transition-all duration-300 z-50">
@@ -363,8 +434,17 @@ export function AdminNavigation({
               className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
               onClick={() => setIsMobileOpen(false)}
             />
-            <aside className="relative w-72 max-w-[80vw] bg-[#111827] text-slate-300 h-full flex flex-col shadow-2xl z-50">
-              <div className="h-16 px-4 flex items-center justify-between border-b border-slate-800">
+            <aside
+              className="relative w-72 max-w-[80vw] text-slate-300 h-full flex flex-col shadow-2xl z-50 transition-all duration-300"
+              style={{
+                background: "var(--restaurant-sidebar-bg)",
+                borderRight: "1px solid var(--restaurant-sidebar-border)",
+              }}
+            >
+              <div
+                className="h-16 px-4 flex items-center justify-between border-b"
+                style={{ borderColor: "var(--restaurant-sidebar-border)" }}
+              >
                 <Link
                   href="/admin"
                   onClick={() => setIsMobileOpen(false)}
@@ -374,12 +454,12 @@ export function AdminNavigation({
                     <img
                       src={logo}
                       alt={restaurantName}
-                      className="w-8 h-8 rounded-lg object-cover border border-white/20 shrink-0"
+                      className="w-8 h-8 rounded-lg object-cover border border-white/20 shrink-0 bg-white/10"
                     />
                   ) : (
                     <span
                       className="grid place-items-center w-8 h-8 rounded-lg text-white font-bold text-xs shadow-xs shrink-0 font-serif"
-                      style={{ backgroundColor: activeBranding.primary_color }}
+                      style={{ backgroundColor: safeActiveBg }}
                     >
                       {restaurantName.charAt(0).toUpperCase()}
                     </span>
@@ -388,14 +468,23 @@ export function AdminNavigation({
                     <span className="truncate text-sm font-bold text-white leading-tight">
                       {restaurantName}
                     </span>
-                    <span className="text-[10px] text-amber-400 font-medium tracking-wide flex items-center gap-1 uppercase">
-                      Lumière B2B • <span className="font-bold text-white bg-amber-500/30 px-1 py-0.2 rounded leading-none">{userRole}</span>
+                    <span
+                      className="text-[10px] font-medium tracking-wide flex items-center gap-1 uppercase"
+                      style={{ color: hexToRgba(safeAccent, 0.9) }}
+                    >
+                      Lumière B2B •{" "}
+                      <span
+                        className="font-bold text-white px-1 py-0.2 rounded leading-none"
+                        style={{ backgroundColor: hexToRgba(safeAccent, 0.25) }}
+                      >
+                        {userRole}
+                      </span>
                     </span>
                   </div>
                 </Link>
                 <button
                   onClick={() => setIsMobileOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -410,12 +499,19 @@ export function AdminNavigation({
 
         {/* Desktop Collapsible Left Sidebar */}
         <aside
-          className={`hidden lg:flex flex-col bg-[#111827] text-slate-300 border-r border-slate-800/80 transition-all duration-300 ease-in-out z-30 shrink-0 ${
+          className={`hidden lg:flex flex-col text-slate-300 border-r transition-all duration-300 ease-in-out z-30 shrink-0 ${
             isCollapsed ? "w-20" : "w-64"
           }`}
+          style={{
+            background: "var(--restaurant-sidebar-bg)",
+            borderColor: "var(--restaurant-sidebar-border)",
+          }}
         >
           {/* Sidebar Header */}
-          <div className="h-16 px-4 flex items-center justify-between border-b border-slate-800/80">
+          <div
+            className="h-16 px-4 flex items-center justify-between border-b transition-colors"
+            style={{ borderColor: "var(--restaurant-sidebar-border)" }}
+          >
             <Link
               href="/admin"
               className={`flex items-center gap-2.5 font-serif text-lg font-bold text-white overflow-hidden transition-all ${
@@ -426,12 +522,12 @@ export function AdminNavigation({
                 <img
                   src={logo}
                   alt={restaurantName}
-                  className="w-8 h-8 rounded-lg object-cover border border-white/20 shrink-0"
+                  className="w-8 h-8 rounded-lg object-cover border border-white/20 shrink-0 bg-white/10"
                 />
               ) : (
                 <span
                   className="grid place-items-center w-8 h-8 rounded-lg text-white font-bold text-xs shadow-xs shrink-0 font-serif"
-                  style={{ backgroundColor: activeBranding.primary_color }}
+                  style={{ backgroundColor: safeActiveBg }}
                 >
                   {restaurantName.charAt(0).toUpperCase()}
                 </span>
@@ -441,8 +537,17 @@ export function AdminNavigation({
                   <span className="truncate text-sm font-bold text-white leading-tight">
                     {restaurantName}
                   </span>
-                  <span className="text-[10px] text-amber-400 font-medium tracking-wide flex items-center gap-1 uppercase">
-                    Workspace • <span className="font-bold text-white bg-amber-500/30 px-1 py-0.2 rounded leading-none">{userRole}</span>
+                  <span
+                    className="text-[10px] font-medium tracking-wide flex items-center gap-1 uppercase"
+                    style={{ color: hexToRgba(safeAccent, 0.9) }}
+                  >
+                    Workspace •{" "}
+                    <span
+                      className="font-bold text-white px-1 py-0.2 rounded leading-none"
+                      style={{ backgroundColor: hexToRgba(safeAccent, 0.25) }}
+                    >
+                      {userRole}
+                    </span>
                   </span>
                 </div>
               )}
@@ -455,7 +560,10 @@ export function AdminNavigation({
           </div>
 
           {/* Sidebar Footer with Collapse Toggle */}
-          <div className="p-3 border-t border-slate-800/80 flex items-center justify-between">
+          <div
+            className="p-3 border-t flex items-center justify-between transition-colors"
+            style={{ borderColor: "var(--restaurant-sidebar-border)" }}
+          >
             {!isCollapsed && userEmail && (
               <span className="text-[11px] text-slate-400 truncate max-w-[140px]" title={userEmail}>
                 {userEmail}
@@ -464,7 +572,7 @@ export function AdminNavigation({
             <button
               onClick={() => setIsCollapsed(!isCollapsed)}
               title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              className={`p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition ${
+              className={`p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition ${
                 isCollapsed ? "mx-auto" : ""
               }`}
             >
@@ -474,9 +582,18 @@ export function AdminNavigation({
         </aside>
 
         {/* Main Content Wrapper */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#faf8f5]">
+        <div
+          className="flex-1 flex flex-col min-w-0 relative transition-all duration-300"
+          style={{
+            backgroundColor: "#f8f7f4",
+            backgroundImage: "var(--restaurant-workspace-glow)",
+          }}
+        >
           {/* Top Bar Header */}
-          <header className="h-16 bg-white border-b border-neutral-200/80 px-4 lg:px-8 flex items-center justify-between sticky top-0 z-20 shadow-2xs">
+          <header
+            className="h-16 bg-white/95 backdrop-blur-xs border-b px-4 lg:px-8 flex items-center justify-between sticky top-0 z-20 shadow-2xs transition-colors duration-300"
+            style={{ borderColor: hexToRgba(primary, 0.15) }}
+          >
             <div className="flex items-center gap-3">
               {/* Mobile Hamburger Toggle */}
               <button
@@ -505,7 +622,7 @@ export function AdminNavigation({
                 ) : (
                   <span
                     className="w-6 h-6 rounded grid place-items-center text-white text-[11px] font-bold font-serif shadow-2xs shrink-0"
-                    style={{ backgroundColor: activeBranding.primary_color }}
+                    style={{ backgroundColor: safeActiveBg }}
                   >
                     {restaurantName.charAt(0).toUpperCase()}
                   </span>
@@ -514,8 +631,12 @@ export function AdminNavigation({
                   {restaurantName}
                 </span>
                 <span
-                  className="hidden md:inline-flex px-2 py-0.5 text-[10px] font-bold rounded-full text-white shadow-2xs shrink-0"
-                  style={{ backgroundColor: activeBranding.primary_color }}
+                  className="hidden md:inline-flex px-2.5 py-0.5 text-[10px] font-bold rounded-full border shadow-2xs shrink-0 transition-colors"
+                  style={{
+                    backgroundColor: hexToRgba(primary, 0.08),
+                    color: isPrimaryLight ? "#1e293b" : primary,
+                    borderColor: hexToRgba(primary, 0.25),
+                  }}
                 >
                   Active Workspace
                 </span>
@@ -554,7 +675,10 @@ export function AdminNavigation({
                           e.target.form?.requestSubmit();
                         }
                       }}
-                      className="py-1.5 px-2.5 text-xs bg-neutral-50 border border-neutral-300/80 rounded-lg font-medium focus:outline-none focus:ring-1 focus:ring-wine text-neutral-700 shadow-2xs cursor-pointer max-w-[140px] sm:max-w-[190px] truncate"
+                      className="py-1.5 px-2.5 text-xs bg-neutral-50/90 border rounded-lg font-medium focus:outline-none text-neutral-700 shadow-2xs cursor-pointer max-w-[140px] sm:max-w-[190px] truncate transition-all"
+                      style={{
+                        borderColor: hexToRgba(primary, 0.25),
+                      }}
                     >
                       <optgroup label="Your Restaurants">
                         {uniqueMemberships.map((m) => (
@@ -599,7 +723,21 @@ export function AdminNavigation({
           </header>
 
           {/* Main Content Area */}
-          <main className="flex-1 px-4 lg:px-8 py-8 max-w-7xl w-full mx-auto">{children}</main>
+          <main className="flex-1 px-4 lg:px-8 py-8 max-w-7xl w-full mx-auto relative z-10">{children}</main>
+
+          {/* Optional Subtle Logo Watermark (Requirement 8) */}
+          {activeBranding.background_logo_enabled && (logo || activeBranding.logo_url) && (
+            <div
+              className="pointer-events-none fixed right-8 bottom-8 z-0 opacity-[0.035] transition-opacity duration-300 hidden md:block select-none"
+              aria-hidden="true"
+            >
+              <img
+                src={logo || activeBranding.logo_url || ""}
+                alt=""
+                className="w-72 h-72 object-contain grayscale"
+              />
+            </div>
+          )}
         </div>
       </div>
 

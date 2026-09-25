@@ -14,7 +14,9 @@ import {
   CheckCircle2,
   XCircle,
   Sparkles,
-  Flame
+  Flame,
+  Upload,
+  Image as ImageIcon
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { money } from "@/data/menu";
@@ -24,6 +26,7 @@ import {
   addMenuItem,
   updateMenuItem,
   deleteMenuItem,
+  uploadRestaurantAssetAction,
   type UpdateMenuItemInput
 } from "@/actions/admin";
 import { getActiveRestaurantId } from "@/actions/tenant";
@@ -57,6 +60,52 @@ export default function MenuAdminPage() {
   });
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [menuImageUploading, setMenuImageUploading] = useState(false);
+  const [menuImageError, setMenuImageError] = useState<string | null>(null);
+  const [showMenuUrlInput, setShowMenuUrlInput] = useState(false);
+  const menuFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  async function handleMenuImageFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setMenuImageError(null);
+
+    const MAX_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setMenuImageError("File size exceeds maximum limit of 5 MB");
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    const allowedMime = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+    if (!allowedMime.includes(file.type.toLowerCase())) {
+      setMenuImageError("Invalid image format. Only JPG, PNG, and WebP files are allowed.");
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (!ext || !["jpg", "jpeg", "png", "webp"].includes(ext)) {
+      setMenuImageError("Invalid file extension. Only .jpg, .jpeg, .png, and .webp files are allowed.");
+      if (e.target) e.target.value = "";
+      return;
+    }
+
+    setMenuImageUploading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("category", "menu");
+
+    const res = await uploadRestaurantAssetAction(formData);
+    setMenuImageUploading(false);
+    if (e.target) e.target.value = "";
+
+    if (res.ok) {
+      setForm((prev) => ({ ...prev, image: res.url }));
+    } else {
+      setMenuImageError(res.error);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -146,6 +195,8 @@ export default function MenuAdminPage() {
       available: true,
     });
     setErrorMsg(null);
+    setMenuImageError(null);
+    setShowMenuUrlInput(false);
     setShowModal(true);
   }
 
@@ -163,6 +214,8 @@ export default function MenuAdminPage() {
       available: it.available,
     });
     setErrorMsg(null);
+    setMenuImageError(null);
+    setShowMenuUrlInput(false);
     setShowModal(true);
   }
 
@@ -543,15 +596,93 @@ export default function MenuAdminPage() {
                   />
                 </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block font-medium mb-1 text-neutral-700">Image Path / URL (optional)</label>
-                  <input
-                    type="text"
-                    value={form.image}
-                    onChange={(e) => setForm({ ...form, image: e.target.value })}
-                    placeholder="/img/menu/biryani.jpg"
-                    className="field font-mono text-[11px]"
-                  />
+                <div className="sm:col-span-2 space-y-2 pt-1 border-t border-cream2">
+                  <label className="block font-medium text-neutral-700">Dish Image</label>
+
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                    {form.image ? (
+                      <div className="relative w-16 h-16 rounded-xl border border-cream2 overflow-hidden bg-neutral-100 flex-shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={form.image} alt="Dish preview" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 flex items-center justify-center text-neutral-400 flex-shrink-0">
+                        <ImageIcon size={20} />
+                      </div>
+                    )}
+
+                    <div className="space-y-1.5 flex-1">
+                      <input
+                        ref={menuFileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        onChange={handleMenuImageFileSelect}
+                        className="hidden"
+                        id="menu-item-image-file-input"
+                      />
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={menuImageUploading}
+                          onClick={() => menuFileInputRef.current?.click()}
+                          className="btn-outline py-1.5 px-3 text-xs flex items-center gap-1.5 disabled:opacity-50"
+                        >
+                          {menuImageUploading ? (
+                            <Loader2 className="animate-spin" size={13} />
+                          ) : (
+                            <Upload size={13} />
+                          )}
+                          <span>{menuImageUploading ? "Uploading..." : form.image ? "Replace Image" : "Upload Image"}</span>
+                        </button>
+
+                        {form.image && (
+                          <button
+                            type="button"
+                            onClick={() => setForm((prev) => ({ ...prev, image: "" }))}
+                            className="text-neutral-500 hover:text-red-600 text-xs underline font-medium"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+
+                      <p className="text-[11px] text-neutral-400">
+                        Max 5 MB. JPG, PNG, or WebP.
+                      </p>
+                    </div>
+                  </div>
+
+                  {menuImageError && (
+                    <p className="text-xs text-red-600 font-medium">{menuImageError}</p>
+                  )}
+
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowMenuUrlInput((prev) => !prev)}
+                      className="text-[11px] text-neutral-500 hover:text-wine underline"
+                    >
+                      {showMenuUrlInput ? "Hide image URL field" : "Or use custom image URL..."}
+                    </button>
+
+                    {showMenuUrlInput && (
+                      <input
+                        type="text"
+                        value={form.image}
+                        onChange={(e) => setForm({ ...form, image: e.target.value })}
+                        placeholder="https://images.unsplash.com/... or /img/menu/dish.jpg"
+                        className="field font-mono text-[11px] mt-1.5"
+                      />
+                    )}
+                  </div>
+
+
+
+
+
+
+
                 </div>
 
                 {editingItem && (

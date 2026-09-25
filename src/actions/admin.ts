@@ -331,6 +331,162 @@ export async function updateRestaurantProfile(
   return { ok: true };
 }
 
+export type UploadAssetCategory = "logo" | "menu";
+
+export async function uploadRestaurantAssetAction(
+  formData: FormData
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const file = formData.get("file") as File | null;
+  const category = (formData.get("category") as string)?.trim() as UploadAssetCategory | undefined;
+
+  if (!file || !(file instanceof File)) {
+    return { ok: false, error: "No image file provided" };
+  }
+
+  if (!category || (category !== "logo" && category !== "menu")) {
+    return { ok: false, error: "Invalid upload category" };
+  }
+
+  // 1. Validate File Size (<= 5 MB)
+  const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
+  if (file.size > MAX_SIZE) {
+    return { ok: false, error: "File size exceeds maximum limit of 5 MB" };
+  }
+
+  // 2. Validate MIME type
+  const allowedMimeTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+  const mimeType = file.type?.toLowerCase();
+  if (!mimeType || !allowedMimeTypes.includes(mimeType)) {
+    return { ok: false, error: "Invalid file type. Only JPEG, PNG, and WebP images are supported." };
+  }
+
+  // 3. Validate File Extension
+  const originalName = file.name || "";
+  const extMatch = originalName.match(/\.([a-zA-Z0-9]+)$/);
+  const ext = extMatch ? extMatch[1].toLowerCase() : "";
+  const allowedExtensions = ["jpg", "jpeg", "png", "webp"];
+  if (!ext || !allowedExtensions.includes(ext)) {
+    return { ok: false, error: "Invalid file extension. Only .jpg, .jpeg, .png, and .webp are allowed." };
+  }
+
+  // 4. Generate Storage Path: {restaurantId}/{category}/{timestamp}_{random}.{ext}
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const objectPath = `${restaurantId}/${category}/${timestamp}_${randomSuffix}.${ext}`;
+
+  // Convert File to ArrayBuffer
+  const fileBuffer = await file.arrayBuffer();
+
+  // 5. Upload to Supabase Storage 'restaurant-assets' bucket
+  const { data: uploadData, error: uploadErr } = await supabase.storage
+    .from("restaurant-assets")
+    .upload(objectPath, fileBuffer, {
+      contentType: mimeType,
+      cacheControl: "3600",
+      upsert: false,
+    });
+
+  if (uploadErr || !uploadData) {
+    return { ok: false, error: uploadErr?.message || "Failed to upload image to storage" };
+  }
+
+  // Get Public URL
+  const { data: publicUrlData } = supabase.storage
+    .from("restaurant-assets")
+    .getPublicUrl(objectPath);
+
+  const publicUrl = publicUrlData.publicUrl;
+
+  // 6. If category is "logo", update restaurant branding and restaurant table logo
+  if (category === "logo") {
+    const { data: currentBranding } = await supabase
+      .from("restaurant_branding")
+      .select("logo_url")
+      .eq("restaurant_id", restaurantId)
+      .maybeSingle();
+
+    const oldLogoUrl = currentBranding?.logo_url;
+
+    const { error: brandErr } = await supabase
+      .from("restaurant_branding")
+      .update({ logo_url: publicUrl, updated_at: new Date().toISOString() })
+      .eq("restaurant_id", restaurantId);
+
+    if (brandErr) {
+      return { ok: false, error: brandErr.message };
+    }
+
+    await supabase
+      .from("restaurants")
+      .update({ logo: publicUrl, updated_at: new Date().toISOString() })
+      .eq("id", restaurantId);
+
+    // Safe cleanup of old custom logo object if it was in restaurant-assets
+    if (oldLogoUrl && oldLogoUrl.includes("/restaurant-assets/") && oldLogoUrl !== publicUrl) {
+      try {
+        const urlParts = oldLogoUrl.split("/restaurant-assets/");
+        if (urlParts.length > 1) {
+          await supabase.storage.from("restaurant-assets").remove([urlParts[1]]);
+        }
+      } catch (cleanupErr) {
+        // non-fatal cleanup warning
+      }
+    }
+
+    revalidatePath("/admin");
+    revalidatePath("/admin/settings");
+  }
+
+  return { ok: true, url: publicUrl };
+}
+
+export async function resetRestaurantLogoAction(): Promise<{ ok: true; logo_url: string } | { ok: false; error: string }> {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error };
+  const { supabase, restaurantId } = auth.context;
+
+  const DEFAULT_LOGO = "/Shinchan.jpg";
+
+  const { data: currentBranding } = await supabase
+    .from("restaurant_branding")
+    .select("logo_url")
+    .eq("restaurant_id", restaurantId)
+    .maybeSingle();
+
+  const oldLogoUrl = currentBranding?.logo_url;
+
+  const { error: brandErr } = await supabase
+    .from("restaurant_branding")
+    .update({ logo_url: DEFAULT_LOGO, updated_at: new Date().toISOString() })
+    .eq("restaurant_id", restaurantId);
+
+  if (brandErr) return { ok: false, error: brandErr.message };
+
+  await supabase
+    .from("restaurants")
+    .update({ logo: DEFAULT_LOGO, updated_at: new Date().toISOString() })
+    .eq("id", restaurantId);
+
+  if (oldLogoUrl && oldLogoUrl.includes("/restaurant-assets/")) {
+    try {
+      const urlParts = oldLogoUrl.split("/restaurant-assets/");
+      if (urlParts.length > 1) {
+        await supabase.storage.from("restaurant-assets").remove([urlParts[1]]);
+      }
+    } catch (e) {
+      // non-fatal
+    }
+  }
+
+  revalidatePath("/admin");
+  revalidatePath("/admin/settings");
+  return { ok: true, logo_url: DEFAULT_LOGO };
+}
+
 export type UpdateRestaurantBrandingInput = {
   primary_color: string;
   secondary_color: string;
