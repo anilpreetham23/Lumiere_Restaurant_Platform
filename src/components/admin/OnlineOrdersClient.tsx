@@ -581,10 +581,16 @@ export function OnlineOrdersClient() {
 
       {/* Review Order Drawer / Modal */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-sm flex justify-end">
-          <div className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col overflow-y-auto animate-in slide-in-from-right duration-200">
-            {/* Header */}
-            <div className="p-4 border-b border-cream2 flex items-center justify-between bg-neutral-50">
+        <div
+          className="fixed inset-0 z-50 overflow-hidden bg-black/40 backdrop-blur-sm flex justify-end cursor-pointer"
+          onClick={() => setSelectedOrder(null)}
+        >
+          <div
+            className="w-full max-w-lg bg-white h-full shadow-2xl flex flex-col overflow-y-auto animate-in slide-in-from-right duration-200 cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Sticky Header with Prominent Close Button */}
+            <div className="p-4 border-b border-cream2 flex items-center justify-between bg-white sticky top-0 z-20 shadow-2xs">
               <div className="flex items-center gap-2.5">
                 {selectedOrder.source === "swiggy" ? (
                   <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-orange-100 text-orange-800 border border-orange-200">
@@ -607,9 +613,11 @@ export function OnlineOrdersClient() {
 
               <button
                 onClick={() => setSelectedOrder(null)}
-                className="p-1.5 text-neutral-400 hover:text-neutral-600 hover:bg-neutral-200 rounded-lg transition"
+                className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 font-semibold rounded-lg text-xs transition flex items-center gap-1.5 border border-neutral-200 shadow-2xs cursor-pointer"
+                title="Close drawer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-4 h-4 text-neutral-600" />
+                <span>Close</span>
               </button>
             </div>
 
@@ -729,14 +737,14 @@ export function OnlineOrdersClient() {
                   <div className="flex items-center gap-2 justify-end">
                     <button
                       onClick={() => setShowRejectInput(false)}
-                      className="px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 rounded-lg"
+                      className="px-3 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-100 rounded-lg cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={() => handleReview("reject")}
                       disabled={reviewing}
-                      className="px-4 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm disabled:opacity-60 flex items-center gap-1.5"
+                      className="px-4 py-1.5 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg shadow-sm disabled:opacity-60 flex items-center gap-1.5 cursor-pointer"
                     >
                       {reviewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ban className="w-3.5 h-3.5" />}
                       Confirm Rejection
@@ -746,32 +754,46 @@ export function OnlineOrdersClient() {
               )}
             </div>
 
-            {/* Sticky Actions Footer */}
-            {selectedOrder.status === "placed" && (
-              <div className="p-4 bg-white border-t border-cream2 flex items-center gap-3">
-                {!showRejectInput && (
-                  <>
-                    <button
-                      onClick={() => setShowRejectInput(true)}
-                      disabled={reviewing}
-                      className="flex-1 py-2.5 px-4 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition flex items-center justify-center gap-1.5 disabled:opacity-60"
-                    >
-                      <XCircle className="w-4 h-4" />
-                      Reject Order
-                    </button>
+            {/* Sticky Actions Footer (Always renders close option) */}
+            <div className="p-4 bg-white border-t border-cream2 flex items-center gap-3 sticky bottom-0 z-20 shadow-xs">
+              {selectedOrder.status === "placed" && !showRejectInput ? (
+                <>
+                  <button
+                    onClick={() => setShowRejectInput(true)}
+                    disabled={reviewing}
+                    className="flex-1 py-2.5 px-4 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    Reject Order
+                  </button>
 
-                    <button
-                      onClick={() => handleReview("accept")}
-                      disabled={reviewing}
-                      className="flex-1 py-2.5 px-4 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-60"
-                    >
-                      {reviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      Accept Order
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
+                  <button
+                    onClick={() => handleReview("accept")}
+                    disabled={reviewing}
+                    className="flex-1 py-2.5 px-4 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer"
+                  >
+                    {reviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                    Accept Order
+                  </button>
+
+                  <button
+                    onClick={() => setSelectedOrder(null)}
+                    className="py-2.5 px-3 text-xs font-semibold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-xl transition flex items-center justify-center gap-1 cursor-pointer"
+                    title="Close drawer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setSelectedOrder(null)}
+                  className="w-full py-2.5 px-4 text-xs font-semibold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+                >
+                  <X className="w-4 h-4 text-neutral-600" />
+                  <span>Close Details</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

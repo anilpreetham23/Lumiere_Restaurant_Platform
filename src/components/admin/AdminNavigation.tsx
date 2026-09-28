@@ -281,7 +281,6 @@ export function AdminNavigation({
         { href: "/admin/staff", label: "Staff & Employees", icon: UserCog },
         { href: "/admin/roles", label: "Roles & Permissions", icon: ShieldCheck },
         { href: "/admin/settings", label: "Settings", icon: Settings },
-        { href: "/admin/branding", label: "Branding", icon: Sparkles },
       ],
     },
   ];
@@ -299,7 +298,6 @@ export function AdminNavigation({
           if (item.href === "/admin/staff") return hasPermission(userRole, "view_staff");
           if (item.href === "/admin/roles") return hasPermission(userRole, "assign_roles") || userRole === "owner" || userRole === "manager";
           if (item.href === "/admin/settings") return hasPermission(userRole, "view_settings");
-          if (item.href === "/admin/branding") return userRole === "owner";
           return true;
         });
         return { ...group, items };
@@ -501,7 +499,7 @@ export function AdminNavigation({
 
         {/* Desktop Collapsible Left Sidebar */}
         <aside
-          className={`hidden lg:flex flex-col text-slate-300 border-r transition-all duration-300 ease-in-out z-30 shrink-0 ${
+          className={`hidden lg:flex flex-col text-slate-300 border-r transition-all duration-300 ease-in-out z-30 shrink-0 sticky top-0 h-screen ${
             isCollapsed ? "w-20" : "w-64"
           }`}
           style={{

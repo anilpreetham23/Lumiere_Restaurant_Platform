@@ -70,7 +70,7 @@ async function seedOrders() {
   ];
 
   const orderRows = [];
-  let orderNum = 1001;
+  let orderNum = 3001;
 
   for (let i = 0; i < dates.length; i++) {
     const dt = dates[i];
@@ -78,14 +78,14 @@ async function seedOrders() {
     const src = sources[i % sources.length];
     const st = statuses[i % statuses.length];
 
-    // Pick 2-4 items for each order
+    // Pick items for each order
     const item1 = menu[i % menu.length];
     const item2 = menu[(i + 3) % menu.length];
     const item3 = menu[(i + 7) % menu.length];
 
-    // Give higher quantities to Rayalaseema Chicken Curry and Risotto al Tartufo on Today and This Month to ensure clear bestsellers!
+    // Give higher quantities to Rayalaseema Chicken Curry on Today and Risotto al Tartufo on This Month
     const isToday = dt.startsWith("2026-09-28");
-    const qty1 = isToday && item1.title.includes("Rayalaseema") ? 5 : (i % 3) + 1;
+    const qty1 = isToday ? (item1.title.includes("Rayalaseema") ? 6 : 3) : (i % 3) + 2;
     const qty2 = isToday ? 2 : (i % 2) + 1;
     const qty3 = 1;
 
@@ -128,15 +128,13 @@ async function seedOrders() {
       order_number: orderNum++,
       source: src,
       status: st,
-      customer_name: cust.name,
-      phone: cust.phone,
+      notes: `Customer: ${cust.name} | Phone: ${cust.phone} | Notes: Please serve fresh.`,
       items: itemsArr,
       subtotal: subtotal,
       tax: tax,
       total: total,
       amount: total,
       created_at: dt,
-      updated_at: dt,
     });
   }
 
