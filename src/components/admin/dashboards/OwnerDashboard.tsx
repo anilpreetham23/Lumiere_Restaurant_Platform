@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   DollarSign,
@@ -26,6 +26,8 @@ import {
 import { money } from "@/data/menu";
 import { setReservationStatus, setSessionOrderStatus } from "@/actions/admin";
 import { DashboardOnlineOrdersClient } from "@/components/admin/DashboardOnlineOrdersClient";
+import { createClient } from "@/lib/supabase/client";
+import { getActiveRestaurantId } from "@/actions/tenant";
 
 type OwnerDashboardProps = {
   restaurantName: string;
@@ -40,9 +42,20 @@ type OwnerDashboardProps = {
   purchaseOrders: any[];
 };
 
+function isOrderToday(isoString: string | null | undefined): boolean {
+  if (!isoString) return false;
+  const d = new Date(isoString);
+  const now = new Date();
+  return (
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear()
+  );
+}
+
 export default function OwnerDashboard({
   restaurantName,
-  orders,
+  orders: initialOrders,
   marketplaceOrders,
   reservations,
   inventoryItems,
@@ -52,44 +65,117 @@ export default function OwnerDashboard({
   tables,
   purchaseOrders,
 }: OwnerDashboardProps) {
-  // Calculations
-  const todayStr = new Date().toISOString().split("T")[0];
+  const [orders, setOrders] = useState<any[]>(initialOrders);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
+  const supabase = useMemo(() => createClient(), []);
 
-  const todayOrders = orders.filter((o) => {
-    const d = o.created_at ? new Date(o.created_at).toISOString().split("T")[0] : "";
-    return d === todayStr;
-  });
+  useEffect(() => {
+    setOrders(initialOrders);
+  }, [initialOrders]);
 
-  const todaySales = todayOrders
-    .filter((o) => o.status !== "cancelled")
-    .reduce((acc, o) => acc + Number(o.total || o.amount || 0), 0);
+  useEffect(() => {
+    getActiveRestaurantId().then((id) => setRestaurantId(id));
+  }, []);
 
-  const activeOrders = orders.filter((o) =>
-    ["placed", "accepted", "preparing", "ready", "served"].includes(o.status)
+  // Realtime subscription for session_orders table
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    const channel = supabase
+      .channel(`dashboard-owner-orders-realtime-${restaurantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_orders",
+          filter: `restaurant_id=eq.${restaurantId}`,
+        },
+        async () => {
+          const { data } = await supabase
+            .from("session_orders")
+            .select("*, dining_sessions(customer_name, phone)")
+            .eq("restaurant_id", restaurantId)
+            .order("created_at", { ascending: false });
+
+          if (data) {
+            setOrders(data);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, restaurantId]);
+
+  // Canonical Operational Metric Calculations
+  const todayOrders = useMemo(
+    () => orders.filter((o) => isOrderToday(o.created_at)),
+    [orders]
   );
 
-  const todayMarketplace = marketplaceOrders.filter((o) => {
-    const d = o.created_at ? new Date(o.created_at).toISOString().split("T")[0] : "";
-    return d === todayStr;
-  });
+  // Revenue = served orders created today
+  const todaySales = useMemo(
+    () =>
+      todayOrders
+        .filter((o) => o.status === "served")
+        .reduce((acc, o) => acc + Number(o.total || o.amount || 0), 0),
+    [todayOrders]
+  );
 
-  const marketplaceSales = todayMarketplace
-    .filter((o) => o.status !== "cancelled")
-    .reduce((acc, o) => acc + Number(o.total || o.amount || 0), 0);
+  // Active orders = placed, accepted, preparing, ready (excluding served & cancelled)
+  const activeOrders = useMemo(
+    () =>
+      orders.filter((o) =>
+        ["placed", "accepted", "preparing", "ready"].includes(o.status)
+      ),
+    [orders]
+  );
 
-  const todayReservations = reservations.filter((r) => r.date === todayStr || r.status === "pending");
+  const todayMarketplace = useMemo(
+    () => marketplaceOrders.filter((o) => isOrderToday(o.created_at)),
+    [marketplaceOrders]
+  );
 
-  const lowStockItems = inventoryItems.filter((i) => {
-    const min = i.min_reorder_level ?? 5;
-    return i.is_active && Number(i.quantity) <= min;
-  });
+  const marketplaceSales = useMemo(
+    () =>
+      todayMarketplace
+        .filter((o) => o.status === "served")
+        .reduce((acc, o) => acc + Number(o.total || o.amount || 0), 0),
+    [todayMarketplace]
+  );
 
-  const occupiedTables = tables.filter((t) => t.status === "occupied");
+  const todayReservations = useMemo(
+    () => reservations.filter((r) => isOrderToday(r.date) || r.status === "pending"),
+    [reservations]
+  );
 
-  const avgRating =
-    reviews.length > 0
-      ? (reviews.reduce((acc, r) => acc + Number(r.rating || 5), 0) / reviews.length).toFixed(1)
-      : "5.0";
+  const lowStockItems = useMemo(
+    () =>
+      inventoryItems.filter((i) => {
+        const min = i.min_reorder_level ?? 5;
+        return i.is_active && Number(i.quantity) <= min;
+      }),
+    [inventoryItems]
+  );
+
+  const occupiedTables = useMemo(
+    () => tables.filter((t) => t.status === "occupied"),
+    [tables]
+  );
+
+  const avgRating = useMemo(
+    () =>
+      reviews.length > 0
+        ? (
+            reviews.reduce((acc, r) => acc + Number(r.rating || 5), 0) /
+            reviews.length
+          ).toFixed(1)
+        : "5.0",
+    [reviews]
+  );
 
   return (
     <div className="space-y-8 pb-16">

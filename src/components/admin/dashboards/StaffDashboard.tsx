@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ShoppingBag,
@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { money } from "@/data/menu";
 import { setSessionOrderStatus, resolveServiceRequest } from "@/actions/admin";
+import { createClient } from "@/lib/supabase/client";
+import { getActiveRestaurantId } from "@/actions/tenant";
 
 type StaffDashboardProps = {
   restaurantName: string;
@@ -27,25 +29,98 @@ type StaffDashboardProps = {
   tables: any[];
 };
 
+function isOrderToday(isoString: string | null | undefined): boolean {
+  if (!isoString) return false;
+  const d = new Date(isoString);
+  const now = new Date();
+  return (
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear()
+  );
+}
+
 export default function StaffDashboard({
   restaurantName,
-  orders,
+  orders: initialOrders,
   reservations,
   serviceRequests,
   tables,
 }: StaffDashboardProps) {
+  const [orders, setOrders] = useState<any[]>(initialOrders);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [resolvingRequestId, setResolvingRequestId] = useState<string | null>(null);
+  const supabase = useMemo(() => createClient(), []);
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  useEffect(() => {
+    setOrders(initialOrders);
+  }, [initialOrders]);
 
-  const pendingOrders = orders.filter((o) => o.status === "placed" || o.status === "accepted");
-  const cookingOrders = orders.filter((o) => o.status === "preparing");
-  const readyOrders = orders.filter((o) => o.status === "ready");
+  useEffect(() => {
+    getActiveRestaurantId().then((id) => setRestaurantId(id));
+  }, []);
 
-  const openRequests = serviceRequests.filter((s) => s.status === "pending" || !s.status);
-  const occupiedTables = tables.filter((t) => t.status === "occupied");
-  const todayReservations = reservations.filter((r) => r.date === todayStr || r.status === "pending");
+  // Realtime subscription for session_orders table
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    const channel = supabase
+      .channel(`dashboard-staff-orders-realtime-${restaurantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_orders",
+          filter: `restaurant_id=eq.${restaurantId}`,
+        },
+        async () => {
+          const { data } = await supabase
+            .from("session_orders")
+            .select("*, dining_sessions(customer_name, phone)")
+            .eq("restaurant_id", restaurantId)
+            .order("created_at", { ascending: false });
+
+          if (data) {
+            setOrders(data);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, restaurantId]);
+
+  const pendingOrders = useMemo(
+    () => orders.filter((o) => o.status === "placed" || o.status === "accepted"),
+    [orders]
+  );
+  const cookingOrders = useMemo(
+    () => orders.filter((o) => o.status === "preparing"),
+    [orders]
+  );
+  const readyOrders = useMemo(
+    () => orders.filter((o) => o.status === "ready"),
+    [orders]
+  );
+
+  const openRequests = useMemo(
+    () => serviceRequests.filter((s) => s.status === "pending" || !s.status),
+    [serviceRequests]
+  );
+
+  const occupiedTables = useMemo(
+    () => tables.filter((t) => t.status === "occupied"),
+    [tables]
+  );
+
+  const todayReservations = useMemo(
+    () => reservations.filter((r) => isOrderToday(r.date) || r.status === "pending"),
+    [reservations]
+  );
 
   async function handleStatusChange(orderId: string, nextStatus: string) {
     setUpdatingOrderId(orderId);

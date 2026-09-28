@@ -281,6 +281,7 @@ export function AdminNavigation({
         { href: "/admin/staff", label: "Staff & Employees", icon: UserCog },
         { href: "/admin/roles", label: "Roles & Permissions", icon: ShieldCheck },
         { href: "/admin/settings", label: "Settings", icon: Settings },
+        { href: "/admin/branding", label: "Branding", icon: Sparkles },
       ],
     },
   ];
@@ -298,6 +299,7 @@ export function AdminNavigation({
           if (item.href === "/admin/staff") return hasPermission(userRole, "view_staff");
           if (item.href === "/admin/roles") return hasPermission(userRole, "assign_roles") || userRole === "owner" || userRole === "manager";
           if (item.href === "/admin/settings") return hasPermission(userRole, "view_settings");
+          if (item.href === "/admin/branding") return userRole === "owner";
           return true;
         });
         return { ...group, items };

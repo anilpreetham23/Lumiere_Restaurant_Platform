@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ShoppingBag,
@@ -23,6 +23,8 @@ import {
 import { money } from "@/data/menu";
 import { setReservationStatus, setSessionOrderStatus, resolveServiceRequest } from "@/actions/admin";
 import { DashboardOnlineOrdersClient } from "@/components/admin/DashboardOnlineOrdersClient";
+import { createClient } from "@/lib/supabase/client";
+import { getActiveRestaurantId } from "@/actions/tenant";
 
 type ManagerDashboardProps = {
   restaurantName: string;
@@ -36,9 +38,20 @@ type ManagerDashboardProps = {
   tables: any[];
 };
 
+function isOrderToday(isoString: string | null | undefined): boolean {
+  if (!isoString) return false;
+  const d = new Date(isoString);
+  const now = new Date();
+  return (
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear()
+  );
+}
+
 export default function ManagerDashboard({
   restaurantName,
-  orders,
+  orders: initialOrders,
   marketplaceOrders,
   reservations,
   inventoryItems,
@@ -47,23 +60,89 @@ export default function ManagerDashboard({
   reviews,
   tables,
 }: ManagerDashboardProps) {
+  const [orders, setOrders] = useState<any[]>(initialOrders);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [resolvingRequestId, setResolvingRequestId] = useState<string | null>(null);
+  const supabase = useMemo(() => createClient(), []);
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  useEffect(() => {
+    setOrders(initialOrders);
+  }, [initialOrders]);
 
-  const pendingOrders = orders.filter((o) => o.status === "placed" || o.status === "accepted");
-  const cookingOrders = orders.filter((o) => o.status === "preparing");
-  const readyOrders = orders.filter((o) => o.status === "ready");
+  useEffect(() => {
+    getActiveRestaurantId().then((id) => setRestaurantId(id));
+  }, []);
 
-  const occupiedTables = tables.filter((t) => t.status === "occupied");
-  const todayReservations = reservations.filter((r) => r.date === todayStr || r.status === "pending");
-  const openRequests = serviceRequests.filter((s) => s.status === "pending" || !s.status);
+  // Realtime subscription for session_orders table
+  useEffect(() => {
+    if (!restaurantId) return;
 
-  const lowStockItems = inventoryItems.filter((i) => {
-    const min = i.min_reorder_level ?? 5;
-    return i.is_active && Number(i.quantity) <= min;
-  });
+    const channel = supabase
+      .channel(`dashboard-manager-orders-realtime-${restaurantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_orders",
+          filter: `restaurant_id=eq.${restaurantId}`,
+        },
+        async () => {
+          const { data } = await supabase
+            .from("session_orders")
+            .select("*, dining_sessions(customer_name, phone)")
+            .eq("restaurant_id", restaurantId)
+            .order("created_at", { ascending: false });
+
+          if (data) {
+            setOrders(data);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, restaurantId]);
+
+  const pendingOrders = useMemo(
+    () => orders.filter((o) => o.status === "placed" || o.status === "accepted"),
+    [orders]
+  );
+  const cookingOrders = useMemo(
+    () => orders.filter((o) => o.status === "preparing"),
+    [orders]
+  );
+  const readyOrders = useMemo(
+    () => orders.filter((o) => o.status === "ready"),
+    [orders]
+  );
+
+  const occupiedTables = useMemo(
+    () => tables.filter((t) => t.status === "occupied"),
+    [tables]
+  );
+
+  const todayReservations = useMemo(
+    () => reservations.filter((r) => isOrderToday(r.date) || r.status === "pending"),
+    [reservations]
+  );
+
+  const openRequests = useMemo(
+    () => serviceRequests.filter((s) => s.status === "pending" || !s.status),
+    [serviceRequests]
+  );
+
+  const lowStockItems = useMemo(
+    () =>
+      inventoryItems.filter((i) => {
+        const min = i.min_reorder_level ?? 5;
+        return i.is_active && Number(i.quantity) <= min;
+      }),
+    [inventoryItems]
+  );
 
   async function handleStatusChange(orderId: string, nextStatus: string) {
     setUpdatingOrderId(orderId);
