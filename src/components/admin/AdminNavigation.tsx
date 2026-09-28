@@ -264,7 +264,6 @@ export function AdminNavigation({
       label: "SALES",
       items: [
         { href: "/admin/payments", label: "Payments", icon: CreditCard },
-        { href: "/admin/refunds", label: "Refunds", icon: RotateCcw },
         { href: "/admin/reports", label: "Reports", icon: BarChart3 },
       ],
     },
@@ -291,7 +290,6 @@ export function AdminNavigation({
     return navGroups
       .map((group) => {
         const items = group.items.filter((item) => {
-          if (item.href === "/admin/refunds") return hasPermission(userRole, "process_refunds");
           if (item.href === "/admin/purchasing") return hasPermission(userRole, "view_purchasing");
           if (item.href === "/admin/payments") return hasPermission(userRole, "view_payments");
           if (item.href === "/admin/reports") return userRole === "owner" || userRole === "manager";

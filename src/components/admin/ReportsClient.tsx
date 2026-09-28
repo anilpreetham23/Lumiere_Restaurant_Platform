@@ -513,14 +513,16 @@ export function ReportsClient({
         ) : (
           <div className="space-y-6">
             {/* Visual Bar Chart Graph Grid */}
-            <div className="h-64 pt-8 pb-4 flex items-end justify-between gap-3 border-b border-neutral-200 px-2 overflow-x-auto">
+            <div className="h-72 pt-14 pb-4 flex items-end justify-between gap-3 border-b border-neutral-200 px-2 overflow-x-auto">
               {itemSalesBreakdown.slice(0, 8).map((item) => {
                 const isTop = item.rank === 1;
                 return (
-                  <div key={item.title} className="flex-1 min-w-[70px] max-w-[120px] flex flex-col items-center h-full justify-end group relative">
+                  <div key={item.title} className="flex-1 min-w-[75px] max-w-[120px] flex flex-col items-center h-full justify-end group relative">
                     {/* Hover Card Tooltip */}
-                    <div className="absolute -top-12 bg-ink text-white text-[10px] py-1 px-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-20 shadow-md font-mono">
-                      {item.title}: {item.qty} units ({formatMoney(item.revenue)})
+                    <div className="absolute -top-10 bg-slate-900 text-white text-[11px] py-1.5 px-3 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap z-30 shadow-2xl border border-amber-400/40 flex items-center gap-1.5">
+                      <span className="font-bold text-amber-300 font-sans">{item.title}:</span>
+                      <span className="font-mono font-bold text-white">{item.qty} sold</span>
+                      <span className="text-amber-200/90 font-mono text-[10px]">({formatMoney(item.revenue)})</span>
                     </div>
 
                     {/* Quantity Badge on Bar */}
@@ -667,12 +669,12 @@ export function ReportsClient({
             </div>
           ) : (
             <div className="space-y-4 pt-2">
-              <div className="h-56 pt-6 pb-2 flex items-end justify-between gap-2 border-b border-neutral-200 px-1 overflow-x-auto">
+              <div className="h-64 pt-12 pb-2 flex items-end justify-between gap-2 border-b border-neutral-200 px-1 overflow-x-auto">
                 {dailyTrendData.map((day) => (
                   <div key={day.dateLabel} className="flex-1 min-w-[38px] flex flex-col items-center h-full justify-end group relative">
                     {/* Hover Tooltip */}
-                    <div className="absolute -top-10 bg-slate-900 text-white text-[10px] py-1 px-2 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-20 font-mono">
-                      {day.dateLabel}: {formatMoney(day.revenue)} ({day.ordersCount} orders)
+                    <div className="absolute -top-10 bg-slate-900 text-white text-[10px] py-1 px-2.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all pointer-events-none whitespace-nowrap z-30 font-mono shadow-xl border border-emerald-500/40">
+                      <span className="text-emerald-400 font-bold">{day.dateLabel}:</span> {formatMoney(day.revenue)} <span className="text-slate-300">({day.ordersCount} orders)</span>
                     </div>
 
                     {/* Value Badge */}
