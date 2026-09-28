@@ -74,7 +74,7 @@ export type DiningSession = {
   receipt_code: string | null;
 };
 
-export type TableInfo = { id: string; label: string; seats: number; state: string };
+export type TableInfo = { id: string; label: string; seats: number; state: string; restaurant_id?: string };
 
 export type SessionSnapshot = {
   restaurant_id?: string;

@@ -1,19 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CUISINES, type Dish } from "@/data/menu";
+import { type Dish } from "@/data/menu";
 import MenuCard from "./MenuCard";
 
 export default function MenuBrowser({ initial = "All", dishes }: { initial?: string; dishes: Dish[] }) {
-  const valid = (CUISINES as readonly string[]).includes(initial) ? initial : "All";
-  const [active, setActive] = useState<string>(valid);
+  const categories = useMemo(() => {
+    const set = new Set(dishes.map((d) => d.cuisine).filter(Boolean));
+    return ["All", ...Array.from(set)];
+  }, [dishes]);
+
+  const [active, setActive] = useState<string>(categories.includes(initial) ? initial : "All");
   const list = active === "All" ? dishes : dishes.filter((d) => d.cuisine === active);
 
   return (
     <div>
       <div className="flex flex-wrap justify-center gap-2 mb-10">
-        {CUISINES.map((c) => (
+        {categories.map((c) => (
           <button
             key={c}
             onClick={() => setActive(c)}

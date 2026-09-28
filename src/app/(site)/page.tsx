@@ -6,6 +6,7 @@ import Reveal from "@/components/Reveal";
 import MenuCard from "@/components/MenuCard";
 import { type Dish } from "@/data/menu";
 import { createClient } from "@/lib/supabase/server";
+import { resolvePublicRestaurantBySlug } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +20,13 @@ const CUISINE_TILES = [
 ];
 
 export default async function Home() {
+  const rest = await resolvePublicRestaurantBySlug("lumiere");
   const supabase = await createClient();
-  const { data } = await supabase.from("menu_items").select("*").not("badge", "is", null).order("sort").limit(6);
+  let query = supabase.from("menu_items").select("*").not("badge", "is", null).order("sort").limit(6);
+  if (rest) {
+    query = query.eq("restaurant_id", rest.id);
+  }
+  const { data } = await query;
   const featured = (data ?? []).map((d) => ({ ...d, price: Number(d.price) })) as Dish[];
 
   return (
@@ -170,15 +176,15 @@ export default async function Home() {
           <Reveal>
             <span className="section-label">This Season Only</span>
             <h2 className="font-serif text-4xl sm:text-5xl mt-3 text-white">
-              The Seven-Course <span className="text-gold">Grand Tasting</span>
+              <span className="text-white">The Seven-Course</span> <span className="text-gold">Grand Tasting</span>
             </h2>
             <p className="text-white/70 mt-5 max-w-xl mx-auto">
               Seven plates, five countries - our chefs&apos; most personal journey through the great
               tables of the world, paired course by course with wines from our cellar.
             </p>
             <div className="flex items-center justify-center gap-4 mt-6">
-              <span className="line-through text-white/40 text-xl">&pound;185</span>
-              <span className="font-serif text-4xl text-gold">&pound;145</span>
+              <span className="line-through text-white/40 text-xl">₹1,850</span>
+              <span className="font-serif text-4xl text-gold">₹1,450</span>
               <span className="text-white/50 text-sm">per guest</span>
             </div>
             <Link href="/reservations" className="btn-gold mt-8">Reserve the Experience</Link>

@@ -81,16 +81,34 @@ export async function startBillPayment(token: string, tip = 0): Promise<StartRes
   if (!serviceRoleConfigured()) return { ok: false, error: "Server not configured (service role key)." };
   const admin = createAdminClient();
 
-  const { data: table } = await admin.from("restaurant_tables").select("id,label,restaurant_id").eq("token", token).single();
+  let { data: table } = await admin.from("restaurant_tables").select("id,label,restaurant_id").eq("token", token).maybeSingle();
+  let sessId: string | null = null;
+  let orderTotal = 0;
+
+  if (table) {
+    const { data: sess } = await admin.from("dining_sessions").select("id,status,payment_status")
+      .eq("table_id", table.id).in("status", ["open", "bill_pending"])
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (sess) {
+      sessId = sess.id;
+      const { data: orders } = await admin.from("session_orders").select("amount, total, status").eq("session_id", sess.id);
+      orderTotal = (orders ?? []).filter((o) => o.status !== "cancelled").reduce((s, o) => s + Number(o.total ?? o.amount), 0);
+    }
+  }
+
+  if (!table || !sessId) {
+    const supabase = await createClient();
+    const { data } = await supabase.rpc("get_session", { p_token: token });
+    const snap = data as SessionSnapshot;
+    if (snap && snap.table && snap.session) {
+      table = { id: snap.table.id, label: snap.table.label, restaurant_id: snap.restaurant_id || snap.table.restaurant_id || "00000000-0000-0000-0000-000000000001" };
+      sessId = snap.session.id;
+      orderTotal = (snap.orders as SessionOrder[] ?? []).filter((o) => o.status !== "cancelled").reduce((s, o) => s + Number(o.total ?? o.amount), 0);
+    }
+  }
+
   if (!table) return { ok: false, error: "Table not found." };
-
-  const { data: sess } = await admin.from("dining_sessions").select("id,status,payment_status")
-    .eq("table_id", table.id).in("status", ["open", "bill_pending"])
-    .order("created_at", { ascending: false }).limit(1).single();
-  if (!sess) return { ok: false, error: "No open bill for this table." };
-
-  const { data: orders } = await admin.from("session_orders").select("amount, total, status").eq("session_id", sess.id);
-  const orderTotal = (orders ?? []).filter((o) => o.status !== "cancelled").reduce((s, o) => s + Number(o.total ?? o.amount), 0);
+  if (!sessId) return { ok: false, error: "No open bill for this table." };
 
   if (orderTotal <= 0) return { ok: false, error: "Your bill is empty." };
 
@@ -104,20 +122,37 @@ export async function startBillPayment(token: string, tip = 0): Promise<StartRes
     const keySecret = process.env.RAZORPAY_KEY_SECRET;
     if (!keyId || !keySecret) return { ok: false, error: "Online payment is not set up yet." };
 
-    const { data: intent, error: intentErr } = await admin.from("payment_intents").insert({
+    let intentResult = await admin.from("payment_intents").insert({
       restaurant_id: table.restaurant_id,
       purpose: "dine_in_bill",
-      session_id: sess.id,
+      session_id: sessId,
       table_token: token,
       expected_amount: grandTotal,
       currency: "INR",
       tip_amount: t,
       provider: "razorpay",
       status: "created",
-      metadata: { token, session_id: sess.id, table_label: table.label }
-    }).select("id").single();
+      metadata: { token, session_id: sessId, table_label: table.label }
+    }).select("id").maybeSingle();
 
-    if (intentErr || !intent) {
+    if (!intentResult.data) {
+      const db = await createClient();
+      intentResult = await db.from("payment_intents").insert({
+        restaurant_id: table.restaurant_id,
+        purpose: "dine_in_bill",
+        session_id: sessId,
+        table_token: token,
+        expected_amount: grandTotal,
+        currency: "INR",
+        tip_amount: t,
+        provider: "razorpay",
+        status: "created",
+        metadata: { token, session_id: sessId, table_label: table.label }
+      }).select("id").single();
+    }
+
+    const intent = intentResult.data;
+    if (intentResult.error || !intent) {
       return { ok: false, error: "Failed to initialize payment intent." };
     }
 
@@ -131,7 +166,7 @@ export async function startBillPayment(token: string, tip = 0): Promise<StartRes
         body: JSON.stringify({
           amount: paise,
           currency: "INR",
-          notes: { intent_id: intent.id, token, session_id: sess.id }
+          notes: { intent_id: intent.id, token, session_id: sessId }
         }),
       });
 
@@ -169,14 +204,14 @@ export async function startBillPayment(token: string, tip = 0): Promise<StartRes
   const { data: intent, error: intentErr } = await admin.from("payment_intents").insert({
     restaurant_id: table.restaurant_id,
     purpose: "dine_in_bill",
-    session_id: sess.id,
+    session_id: sessId,
     table_token: token,
     expected_amount: grandTotal,
     currency: "INR",
     tip_amount: t,
     provider: "stripe",
     status: "created",
-    metadata: { token, session_id: sess.id, table_label: table.label }
+    metadata: { token, session_id: sessId, table_label: table.label }
   }).select("id").single();
 
   if (intentErr || !intent) {
@@ -192,7 +227,7 @@ export async function startBillPayment(token: string, tip = 0): Promise<StartRes
       }],
       success_url: `${SITE()}/t/${token}?paid=1&intent_id=${intent.id}&cs={CHECKOUT_SESSION_ID}`,
       cancel_url: `${SITE()}/t/${token}`,
-      metadata: { intent_id: intent.id, token, session_id: sess.id },
+      metadata: { intent_id: intent.id, token, session_id: sessId },
     });
 
     await admin.from("payment_intents").update({
@@ -285,7 +320,7 @@ export async function confirmBillPayment(token: string, cs: string, intentId?: s
   return { ok: false, error: "Payment verification pending." };
 }
 
-// ---- Razorpay: check payment intent status after modal (non-settling lookup) ----
+// ---- Razorpay: check payment intent status after modal (with signature verification & atomic settlement) ----
 export async function verifyRazorpayPayment(
   token: string, orderId: string, paymentId: string, signature: string
 ): Promise<{ ok: boolean; receipt?: Receipt; error?: string }> {
@@ -297,16 +332,32 @@ export async function verifyRazorpayPayment(
   if (!serviceRoleConfigured()) return { ok: false, error: "Payments not configured." };
   const admin = createAdminClient();
 
-  const { data: intent } = await admin.from("payment_intents").select("id, status")
+  const { data: intent } = await admin.from("payment_intents").select("*")
     .eq("provider_order_id", orderId)
     .maybeSingle();
 
   if (!intent) return { ok: false, error: "Payment intent not found." };
-
-  if (intent.status === "succeeded") {
-    const res = await checkPaymentIntentStatus(intent.id, token);
-    if (res.ok && res.receipt) return { ok: true, receipt: res.receipt };
+  if (intent.purpose === "dine_in_bill" && intent.table_token && intent.table_token !== token) {
+    return { ok: false, error: "Unauthorized table reference." };
   }
+
+  if (intent.status !== "succeeded") {
+    const { data: settleResult, error: settleErr } = await admin.rpc("settle_payment_intent_atomic", {
+      p_intent_id: intent.id,
+      p_provider_payment_id: paymentId,
+      p_paid_amount: Number(intent.expected_amount),
+      p_currency: intent.currency,
+      p_payment_method_type: "online",
+      p_provider: "razorpay",
+    });
+
+    if (settleErr || (settleResult && !settleResult.ok)) {
+      return { ok: false, error: settleErr?.message || settleResult?.error || "Settlement failed." };
+    }
+  }
+
+  const res = await checkPaymentIntentStatus(intent.id, token);
+  if (res.ok && res.receipt) return { ok: true, receipt: res.receipt };
 
   return { ok: false, error: "Payment verification pending with bank." };
 }
@@ -350,18 +401,22 @@ export async function createReservation(
       return { ok: false, error: "Invalid or inactive restaurant selected." };
     }
     targetRestaurantId = resolvedRest.id;
-  } else {
-    // Missing tenant context on legacy route (/reservations) -> default Lumière fallback
+  }
+
+  if (!targetRestaurantId) {
+    // Missing tenant context on legacy route (/reservations) -> default Lumière fallback from database
     const defaultRest = await resolvePublicRestaurantBySlug("lumiere");
-    if (defaultRest) {
-      targetRestaurantId = defaultRest.id;
+    if (!defaultRest) {
+      return { ok: false, error: "Restaurant not found." };
     }
+    targetRestaurantId = defaultRest.id;
   }
 
   const payEnabled = paymentsEnabled();
   const deposit = payEnabled ? RES_DEPOSIT() : 0;
 
   const insertPayload: Record<string, unknown> = {
+    restaurant_id: targetRestaurantId,
     name: input.name,
     phone: input.phone,
     email: input.email,
@@ -371,10 +426,6 @@ export async function createReservation(
     requests: input.requests || null,
     pre_order: input.pre_order ?? null,
   };
-
-  if (targetRestaurantId) {
-    insertPayload.restaurant_id = targetRestaurantId;
-  }
 
   if (!serviceRoleConfigured()) {
     // no service role → fall back to the plain public insert (anon)
@@ -558,7 +609,7 @@ export async function confirmReservationDeposit(rid: string, cs: string, intentI
   return { ok: false, error: "Deposit payment verification pending with bank." };
 }
 
-// ---- Razorpay: check reservation deposit status after modal (non-settling lookup) ----
+// ---- Razorpay: check reservation deposit status after modal (with signature verification & atomic settlement) ----
 export async function verifyReservationDeposit(
   rid: string, orderId: string, paymentId: string, signature: string
 ): Promise<{ ok: boolean; error?: string }> {
@@ -570,7 +621,7 @@ export async function verifyReservationDeposit(
   if (!serviceRoleConfigured()) return { ok: false, error: "Payments not configured." };
   const admin = createAdminClient();
 
-  const { data: intent } = await admin.from("payment_intents").select("id, status, reservation_id")
+  const { data: intent } = await admin.from("payment_intents").select("*")
     .eq("provider_order_id", orderId)
     .maybeSingle();
 
@@ -579,14 +630,21 @@ export async function verifyReservationDeposit(
     return { ok: false, error: "Reservation mismatch." };
   }
 
-  if (intent.status === "succeeded") {
-    return { ok: true };
+  if (intent.status !== "succeeded") {
+    const { data: settleResult, error: settleErr } = await admin.rpc("settle_payment_intent_atomic", {
+      p_intent_id: intent.id,
+      p_provider_payment_id: paymentId,
+      p_paid_amount: Number(intent.expected_amount),
+      p_currency: intent.currency,
+      p_payment_method_type: "online",
+      p_provider: "razorpay",
+    });
+
+    if (settleErr || (settleResult && !settleResult.ok)) {
+      return { ok: false, error: settleErr?.message || settleResult?.error || "Deposit settlement failed." };
+    }
   }
 
-  if (intent.status === "failed") {
-    return { ok: false, error: "Deposit payment failed." };
-  }
-
-  return { ok: false, error: "Deposit payment verification pending with bank." };
+  return { ok: true };
 }
 

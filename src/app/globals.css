@@ -34,7 +34,7 @@ body {
   font-family: var(--font-sans);
   overflow-x: hidden;
 }
-h1, h2, h3, h4, h5 { font-family: var(--font-serif); color: var(--color-ink); }
+h1, h2, h3, h4, h5 { font-family: var(--font-serif); }
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--color-gold); border-radius: 10px; }
 ::selection { background: var(--color-gold); color: var(--color-ink); }

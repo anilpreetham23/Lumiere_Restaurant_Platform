@@ -45,13 +45,21 @@ export async function resolveServiceRequest(id: string) {
   return { ok: true };
 }
 
+function revalidateMenuPaths() {
+  revalidatePath("/admin/menu");
+  revalidatePath("/menu");
+  revalidatePath("/");
+  revalidatePath("/reservations");
+  revalidatePath("/order");
+}
+
 export async function setMenuAvailability(id: string, available: boolean) {
   const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error };
   const { supabase, restaurantId } = auth.context;
   const { error } = await supabase.from("menu_items").update({ available }).eq("id", id).eq("restaurant_id", restaurantId);
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/admin/menu");
+  revalidateMenuPaths();
   return { ok: true };
 }
 
@@ -62,7 +70,7 @@ export async function setMenuPrice(id: string, price: number) {
   if (!Number.isFinite(price) || price < 0) return { ok: false, error: "Bad price" };
   const { error } = await supabase.from("menu_items").update({ price }).eq("id", id).eq("restaurant_id", restaurantId);
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/admin/menu");
+  revalidateMenuPaths();
   return { ok: true };
 }
 
@@ -96,7 +104,7 @@ export async function addMenuItem(input: {
   };
   const { error } = await supabase.from("menu_items").insert({ ...row, restaurant_id: restaurantId });
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/admin/menu");
+  revalidateMenuPaths();
   return { ok: true };
 }
 
@@ -148,7 +156,7 @@ export async function updateMenuItem(input: UpdateMenuItemInput): Promise<{ ok: 
     .eq("restaurant_id", restaurantId);
 
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/admin/menu");
+  revalidateMenuPaths();
   return { ok: true };
 }
 
@@ -981,7 +989,7 @@ export async function deleteMenuItem(id: string) {
   const { supabase, restaurantId } = auth.context;
   const { error } = await supabase.from("menu_items").delete().eq("id", id).eq("restaurant_id", restaurantId);
   if (error) return { ok: false, error: error.message };
-  revalidatePath("/admin/menu");
+  revalidateMenuPaths();
   return { ok: true };
 }
 

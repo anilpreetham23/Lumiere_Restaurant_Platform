@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { resolvePublicRestaurantBySlug } from "@/lib/tenant";
 
 export type ActionResult = { ok: boolean; error?: string };
 
@@ -18,7 +19,11 @@ function todayISO() {
 }
 
 export async function submitReservation(fd: FormData): Promise<ActionResult> {
+  const rest = await resolvePublicRestaurantBySlug("lumiere");
+  if (!rest) return { ok: false, error: "Restaurant unavailable." };
+
   const row = {
+    restaurant_id: rest.id,
     name: str(fd, "name"),
     phone: str(fd, "phone"),
     email: str(fd, "email"),
@@ -40,7 +45,11 @@ export async function submitReservation(fd: FormData): Promise<ActionResult> {
 }
 
 export async function submitContact(fd: FormData): Promise<ActionResult> {
+  const rest = await resolvePublicRestaurantBySlug("lumiere");
+  if (!rest) return { ok: false, error: "Restaurant unavailable." };
+
   const row = {
+    restaurant_id: rest.id,
     name: str(fd, "name"),
     email: str(fd, "email"),
     phone: str(fd, "phone") || null,
@@ -83,20 +92,22 @@ export async function placeOrder(payload: {
   if (!PHONE_RE.test(phone)) return { ok: false, error: "Enter a valid phone number." };
   if (!items?.length) return { ok: false, error: "Your order is empty." };
 
-  const total = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const rest = await resolvePublicRestaurantBySlug("lumiere");
+  if (!rest) return { ok: false, error: "Restaurant unavailable." };
+
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("orders")
-    .insert({
-      customer_name,
-      email,
-      phone,
-      notes: notes || null,
-      items,
-      total,
-    })
-    .select("id")
-    .single();
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, orderId: data.id };
+  const { data, error } = await supabase.rpc("place_public_online_order", {
+    p_restaurant_id: rest.id,
+    p_customer_name: customer_name,
+    p_email: email,
+    p_phone: phone,
+    p_notes: notes || null,
+    p_items: items,
+  });
+
+  if (error || !data || !data.ok) {
+    return { ok: false, error: error?.message || "Failed to place order." };
+  }
+
+  return { ok: true, orderId: data.order_id };
 }

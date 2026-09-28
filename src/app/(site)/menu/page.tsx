@@ -3,6 +3,7 @@ import Reveal from "@/components/Reveal";
 import MenuBrowser from "@/components/MenuBrowser";
 import PageHero from "@/components/PageHero";
 import { createClient } from "@/lib/supabase/server";
+import { resolvePublicRestaurantBySlug } from "@/lib/tenant";
 import { type Dish } from "@/data/menu";
 
 export const metadata: Metadata = {
@@ -18,9 +19,14 @@ export default async function MenuPage({
   searchParams: Promise<{ c?: string }>;
 }) {
   const { c } = await searchParams;
+  const rest = await resolvePublicRestaurantBySlug("lumiere");
   const supabase = await createClient();
-  const { data } = await supabase.from("menu_items").select("*").order("sort");
-  const dishes = (data ?? []).map((d) => ({ ...d, price: Number(d.price) })) as Dish[];
+  let query = supabase.from("menu_items").select("*").order("sort");
+  if (rest) {
+    query = query.eq("restaurant_id", rest.id);
+  }
+  const { data } = await query;
+  const dishes = (data ?? []).map((d: any) => ({ ...d, price: Number(d.price) })) as Dish[];
   return (
     <>
       <PageHero

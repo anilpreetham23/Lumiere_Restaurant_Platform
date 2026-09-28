@@ -4,6 +4,7 @@ import Reveal from "@/components/Reveal";
 import ReservationForm from "@/components/ReservationForm";
 import { createClient } from "@/lib/supabase/server";
 import { confirmReservationDeposit } from "@/actions/pay";
+import { resolvePublicRestaurantBySlug } from "@/lib/tenant";
 import type { MenuItem } from "@/lib/order";
 
 export const dynamic = "force-dynamic";
@@ -32,8 +33,13 @@ export default async function ReservationsPage({
     }
   }
 
+  const rest = await resolvePublicRestaurantBySlug("lumiere");
   const supabase = await createClient();
-  const { data: menu } = await supabase.from("menu_items").select("*").eq("available", true).order("sort");
+  let menuQuery = supabase.from("menu_items").select("*").eq("available", true).order("sort");
+  if (rest) {
+    menuQuery = menuQuery.eq("restaurant_id", rest.id);
+  }
+  const { data: menu } = await menuQuery;
 
   return (
     <>

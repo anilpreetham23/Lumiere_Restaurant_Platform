@@ -9,7 +9,7 @@ import {
 import QRCode from "qrcode";
 import { CreditCard } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { startBillPayment, checkPaymentIntentStatus, type Receipt } from "@/actions/pay";
+import { startBillPayment, checkPaymentIntentStatus, verifyRazorpayPayment, type Receipt } from "@/actions/pay";
 
 // Razorpay checkout.js injects a global constructor.
 declare global {
@@ -92,11 +92,28 @@ export default function TableOrder({
       key: res.keyId, amount: res.amount, currency: "INR",
       name: res.name, description: `Table ${res.label}`, order_id: res.orderId,
       theme: { color: "#7a2e35" },
-      handler: async () => {
-        // Modal callback: payment completed by customer at Razorpay
-        // Webhook handles authoritative settlement asynchronously.
-        // Frontend polls payment_intent status until backend confirmed.
+      handler: async (resp: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
         setVerifyingPay(true);
+        const vRes = await verifyRazorpayPayment(
+          token,
+          resp.razorpay_order_id,
+          resp.razorpay_payment_id,
+          resp.razorpay_signature
+        );
+        if (vRes.ok && vRes.receipt) {
+          setLocalReceipt(vRes.receipt);
+          setVerifyingPay(false);
+          setPayBusy(false);
+          setToast("Payment verified & bill settled");
+          refresh();
+        } else if (!vRes.ok) {
+          setErr(vRes.error ?? "Payment signature verification failed.");
+          setVerifyingPay(false);
+          setPayBusy(false);
+        } else {
+          // Fallback to background polling if settlement pending
+          setVerifyingPay(true);
+        }
       },
       modal: { ondismiss: () => setPayBusy(false) },
     } as Record<string, unknown>);
@@ -427,6 +444,7 @@ export default function TableOrder({
                     </>
                   )}
                 </button>
+                {err && <p className="text-center text-sm text-red-600 font-medium my-2">{err}</p>}
                 <p className="text-center text-xs text-neutral-500">
                   Or tap <b>Ask for bill</b> to pay by cash at the counter.
                 </p>
