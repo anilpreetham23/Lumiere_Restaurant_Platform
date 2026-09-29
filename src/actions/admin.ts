@@ -2970,6 +2970,115 @@ export async function createStaffInvitationAdminAction(email: string, role: Role
   return { ok: true, token };
 }
 
+export async function provisionStaffAccountAdminAction(input: {
+  email: string;
+  password?: string;
+  fullName: string;
+  role: Role;
+  employeeId?: string;
+}) {
+  const auth = await requireRole(["owner", "manager"]);
+  if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
+
+  const { restaurantId, user: caller, role: callerRole, supabase } = auth.context;
+
+  const cleanEmail = input.email?.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@")) {
+    return { ok: false, error: "A valid email address is required" };
+  }
+
+  const role = input.role || "staff";
+  if (role === "owner" && callerRole !== "owner") {
+    return { ok: false, error: "Only an owner can grant owner role." };
+  }
+
+  const pwd = input.password?.trim() || "Password123!";
+  if (pwd.length < 6) {
+    return { ok: false, error: "Password must be at least 6 characters." };
+  }
+
+  const { serviceRoleConfigured, createAdminClient } = await import("@/lib/supabase/admin");
+  const useAdmin = serviceRoleConfigured();
+  const dbClient = useAdmin ? createAdminClient() : supabase;
+
+  let userId: string | null = null;
+
+  if (useAdmin) {
+    const adminClient = dbClient as ReturnType<typeof createAdminClient>;
+    const { data: created, error: createErr } = await adminClient.auth.admin.createUser({
+      email: cleanEmail,
+      password: pwd,
+      email_confirm: true,
+      user_metadata: { full_name: input.fullName },
+    });
+
+    if (createErr) {
+      if (createErr.message.includes("already registered") || createErr.message.includes("exists")) {
+        const { data: users } = await adminClient.auth.admin.listUsers();
+        const existing = users?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+        if (existing) userId = existing.id;
+      } else {
+        return { ok: false, error: createErr.message };
+      }
+    } else if (created.user) {
+      userId = created.user.id;
+    }
+  } else {
+    // Fallback sign up
+    const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password: pwd,
+      options: { data: { full_name: input.fullName } },
+    });
+    if (signUpErr) {
+      return { ok: false, error: signUpErr.message };
+    }
+    userId = signUpData.user?.id || null;
+  }
+
+  if (!userId) {
+    return { ok: false, error: "Failed to establish user account in Supabase Auth." };
+  }
+
+  // Insert or update restaurant membership
+  const { error: memErr } = await dbClient
+    .from("restaurant_memberships")
+    .upsert(
+      {
+        restaurant_id: restaurantId,
+        user_id: userId,
+        role,
+        status: "active",
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "restaurant_id,user_id" }
+    );
+
+  if (memErr) {
+    return { ok: false, error: memErr.message };
+  }
+
+  // Link employee record if provided
+  if (input.employeeId) {
+    await dbClient
+      .from("employee_records")
+      .update({ user_id: userId, status: "active", updated_at: new Date().toISOString() })
+      .eq("id", input.employeeId)
+      .eq("restaurant_id", restaurantId);
+  }
+
+  revalidatePath("/admin/staff");
+  return {
+    ok: true,
+    data: {
+      email: cleanEmail,
+      password: pwd,
+      role,
+      userId,
+    },
+  };
+}
+
 export async function revokeStaffInvitationAdminAction(invitationId: string) {
   const auth = await requireRole(["owner", "manager"]);
   if (!auth.ok) return { ok: false, error: auth.error || "Owner or Manager authority required" };
