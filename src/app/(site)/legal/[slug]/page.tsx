@@ -53,7 +53,7 @@ const DOCS: Record<string, Doc> = {
         "We use only essential cookies needed to run the site and keep you signed in (staff). We do not use non-essential tracking cookies.",
       ]],
       ["6. Contact", [
-        "For any privacy request, email reservations@lumiere-dining.com.",
+        "For any privacy request, email anilpreetham15@gmail.com.",
       ]],
     ],
   },
@@ -78,7 +78,7 @@ const DOCS: Record<string, Doc> = {
         "Approved refunds are returned to the original payment method. Processing typically takes 5–7 business days depending on your bank or provider.",
       ]],
       ["6. Contact", [
-        "For any refund request, email reservations@lumiere-dining.com with your receipt code.",
+        "For any refund request, email anilpreetham15@gmail.com with your receipt code.",
       ]],
     ],
   },

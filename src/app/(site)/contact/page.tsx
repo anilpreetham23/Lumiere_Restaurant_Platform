@@ -11,8 +11,8 @@ export const metadata: Metadata = {
 
 const INFO: [React.ReactNode, string, string][] = [
   [<MapPin size={18} key="a" />, "Address", "12 MG Road, Indiranagar, Bengaluru, Karnataka 560038"],
-  [<Phone size={18} key="p" />, "Phone", "+91 80 4965 8000"],
-  [<Mail size={18} key="e" />, "Email", "reservations@lumiere-dining.com"],
+  [<Phone size={18} key="p" />, "Phone", "+91 93465 43338"],
+  [<Mail size={18} key="e" />, "Email", "anilpreetham15@gmail.com"],
   [<Clock size={18} key="c" />, "Hours", "Mon - Sun, 12pm - 11:30pm"],
 ];
 

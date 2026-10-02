@@ -35,7 +35,7 @@ export default function Navbar() {
       <div className="hidden md:block bg-ink text-white/70 text-xs">
         <div className="mx-auto max-w-6xl px-5 py-2 flex justify-between items-center">
           <span className="flex items-center gap-2">
-            <Phone size={12} className="text-gold" /> +91 80 4965 8000 &middot; 12 MG Road, Indiranagar, Bengaluru
+            <Phone size={12} className="text-gold" /> +91 93465 43338 &middot; 12 MG Road, Indiranagar, Bengaluru
           </span>
           <span className="text-gold tracking-widest uppercase text-[0.65rem]">
             Now accepting reservations

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 const INFO: [React.ReactNode, string, string][] = [
   [<Clock size={18} key="c" />, "Opening Hours", "Mon - Sun, 12pm - 11:30pm"],
-  [<Phone size={18} key="p" />, "Call for Booking", "+91 80 4965 8000"],
+  [<Phone size={18} key="p" />, "Call for Booking", "+91 93465 43338"],
   [<Users size={18} key="u" />, "Private Dining", "Bespoke Royal Thalis for parties of 10+"],
   [<MapPin size={18} key="m" />, "Location", "12 MG Road, Indiranagar, Bengaluru"],
 ];

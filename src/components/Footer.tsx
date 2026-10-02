@@ -45,10 +45,10 @@ export default function Footer() {
               <MapPin size={15} className="text-gold mt-0.5 shrink-0" /> 12 MG Road, Indiranagar, Bengaluru 560038
             </li>
             <li className="flex gap-2">
-              <Phone size={15} className="text-gold shrink-0" /> +91 80 4965 8000
+              <Phone size={15} className="text-gold shrink-0" /> +91 93465 43338
             </li>
             <li className="flex gap-2">
-              <Mail size={15} className="text-gold shrink-0" /> reservations@lumiere-dining.com
+              <Mail size={15} className="text-gold shrink-0" /> anilpreetham15@gmail.com
             </li>
             <li className="flex gap-2">
               <Clock size={15} className="text-gold shrink-0" /> Mon-Sun 12pm-11:30pm
