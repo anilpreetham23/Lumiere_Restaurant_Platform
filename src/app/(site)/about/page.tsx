@@ -7,24 +7,23 @@ import { resolvePublicRestaurantBySlug } from "@/lib/tenant";
 
 export const metadata: Metadata = {
   title: "Our Story & Team",
-  description: "Two decades at the table - the story of Lumiere and the masters, chefs, sommeliers, inventory specialists, and floor staff behind Mayfair's fine dining experience.",
+  description: "Two decades of royal culinary heritage — the story of Lumiere, master khansamas, inventory specialists, and dedicated floor staff in Bengaluru, India.",
 };
 
 export const dynamic = "force-dynamic";
 
 const TIMELINE = [
-  ["2002", "A Single Table", "Lumiere opens as an intimate 20-seat room in Mayfair, serving a menu that changes with whatever our chefs carry home from their travels."],
-  ["2009", "The World Arrives", "We build a brigade of specialists from France, Italy and Japan. The seven-course tasting menu is born and quickly becomes London's hardest reservation."],
-  ["2016", "Two Michelin Stars", "Awarded our second Michelin star for a menu that moves seamlessly across continents without ever losing its soul."],
-  ["2024", "A Modern Classic", "Today Lumiere welcomes guests from every corner of the world to a single table where each great cuisine is given equal reverence."],
+  ["2002", "A Vision in Bengaluru", "Lumière opens as an intimate dining room in Indiranagar, Bengaluru, serving authentic recipes brought from royal kitchens across India."],
+  ["2009", "The Khansamas Assemble", "We bring together master chefs from Lucknow, Hyderabad, Amritsar, and Kerala. The 7-course Royal Thali tasting menu is born."],
+  ["2016", "National Acclaim", "Recognised as one of India's premier fine dining destinations for an authentic menu that honours centuries of culinary tradition."],
+  ["2024", "The Modern Indian Table", "Today Lumière welcomes guests to a regal dining space where every regional culinary heritage is celebrated with passion."],
 ];
 
 const CHEF_IMAGES: Record<string, string> = {
-  "Antoine Laurent": "/img/chefs/1.jpg",
-  "Alice Moreau": "/img/chefs/2.jpg",
-  "Marco Bianchi": "/img/chefs/2.jpg",
-  "Kenji Tanaka": "/img/chefs/3.jpg",
-  "Camille Laurent": "/img/chefs/4.jpg",
+  "Chef Rajesh Verma": "/img/chefs/1.jpg",
+  "Chef Priya Sundaram": "/img/chefs/2.jpg",
+  "Chef Vikram Malhotra": "/img/chefs/3.jpg",
+  "Chef Kabir Khan": "/img/chefs/4.jpg",
 };
 
 interface StaffMember {
@@ -66,7 +65,7 @@ export default async function AboutPage() {
       <PageHero
         label="Our Story & Team"
         title="Two Decades at the Table"
-        sub="From an intimate Mayfair room to a two-star destination - driven by master chefs, inventory specialists, sommeliers, and dedicated service staff."
+        sub="From an intimate room in Indiranagar to an award-winning Indian culinary destination — driven by master chefs, khansamas, inventory specialists, and service staff."
       />
 
       {/* Story Section */}
@@ -83,18 +82,14 @@ export default async function AboutPage() {
             </div>
           </Reveal>
           <Reveal delay={0.1}>
-            <span className="section-label">One Kitchen, Every Great Cuisine</span>
-            <h2 className="font-serif text-4xl mt-2">An Obsession with <span className="text-wine">Craft</span></h2>
+            <span className="section-label">One Kitchen, Every Great Indian Region</span>
+            <h2 className="font-serif text-4xl mt-2">An Obsession with <span className="text-wine">Heritage</span></h2>
             <div className="gold-line mt-4" />
             <p className="text-neutral-600 mt-5 leading-relaxed">
-              Founded in 2002, Lumiere was born from a simple obsession - to gather the world&apos;s finest
-              culinary traditions under one roof and serve them with the precision of haute cuisine. Two
-              decades on, our chefs travel the globe so that every plate tells the story of where it came from.
+              Founded in 2002 in Bengaluru, Lumiere was born from a passion to showcase the royal recipes of Lucknow, Kashmir, Chettinad, Malabar, and Punjab under one grand roof. Two decades on, our khansamas preserve centuries-old secret spice blends and slow-cooking dum techniques.
             </p>
             <p className="text-neutral-600 mt-4 leading-relaxed">
-              We source line-caught fish, single-estate produce and rare seasonal finds daily. Dedicated
-              inventory auditors oversee ingredient freshness and traceability, while master sommeliers pair
-              each course from a cellar of over four hundred wines.
+              We source organic saffron from Pampore, fresh cardamom from Idukki, and ocean catch daily. Dedicated inventory auditors ensure uncompromised quality and spice purity at every step.
             </p>
           </Reveal>
         </div>
@@ -131,7 +126,7 @@ export default async function AboutPage() {
             <h2 className="font-serif text-4xl mt-2">Our Master <span className="text-wine">Chefs</span></h2>
             <div className="gold-line mx-auto mt-4" />
             <p className="text-neutral-500 text-sm mt-3 max-w-xl mx-auto">
-              Our kitchen team brings together Michelin-starred craftsmanship spanning French haute cuisine, Italian risotto mastery, and Japanese sushi arts.
+              Our kitchen team brings together master khansamas and culinary experts spanning Awadhi Dum Pukht, North Indian Tandoor, and South Indian Coastal arts.
             </p>
           </Reveal>
 

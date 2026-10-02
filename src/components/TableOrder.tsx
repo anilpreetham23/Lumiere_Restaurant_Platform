@@ -21,7 +21,7 @@ import {
   type MenuItem, type SessionSnapshot, type SessionOrder,
 } from "@/lib/order";
 
-const CUISINES = ["All", "France", "Italy", "Japan", "India", "Spain", "Patisserie"];
+const CUISINES = ["All", "North Indian", "South Indian", "Royal Mughlai", "Coastal Seafood", "Tandoor & Starters", "Mithai & Desserts"];
 
 export default function TableOrder({
   token, initial, menu, receipt,
@@ -470,7 +470,7 @@ export default function TableOrder({
                 cuisine === c ? "bg-wine text-white border-wine" : "bg-white text-neutral-600 border-cream2"
               }`}
             >
-              {c === "Patisserie" ? "Pâtisserie" : c}
+              {c}
             </button>
           ))}
         </div>

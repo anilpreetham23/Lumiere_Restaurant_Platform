@@ -10,7 +10,7 @@ const DOCS: Record<string, Doc> = {
     updated: "20 July 2026",
     body: [
       ["1. About us", [
-        "Lumière (\"we\", \"us\") operates the restaurant at 24 Belgrave Square, Mayfair, and this website and ordering service. By placing an order, booking a table, or using this site you agree to these terms.",
+        "Lumière (\"we\", \"us\") operates the restaurant at 12 MG Road, Indiranagar, Bengaluru, Karnataka, India, and this website and ordering service. By placing an order, booking a table, or using this site you agree to these terms.",
       ]],
       ["2. Orders & table service", [
         "Scanning a table QR code opens an ordering session for that table. Prices are shown in Indian Rupees (₹) and are inclusive of applicable taxes unless stated otherwise.",

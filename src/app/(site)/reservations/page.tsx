@@ -5,15 +5,16 @@ import ReservationForm from "@/components/ReservationForm";
 import { createClient } from "@/lib/supabase/server";
 import { confirmReservationDeposit } from "@/actions/pay";
 import { resolvePublicRestaurantBySlug } from "@/lib/tenant";
+import { MENU } from "@/data/menu";
 import type { MenuItem } from "@/lib/order";
 
 export const dynamic = "force-dynamic";
 
 const INFO: [React.ReactNode, string, string][] = [
-  [<Clock size={18} key="c" />, "Opening Hours", "Wed - Sun, 12pm - 11pm"],
-  [<Phone size={18} key="p" />, "Call for Booking", "+44 (0)20 7946 0000"],
-  [<Users size={18} key="u" />, "Private Dining", "Bespoke menus for parties of 10+"],
-  [<MapPin size={18} key="m" />, "Location", "24 Belgrave Square, Mayfair"],
+  [<Clock size={18} key="c" />, "Opening Hours", "Mon - Sun, 12pm - 11:30pm"],
+  [<Phone size={18} key="p" />, "Call for Booking", "+91 80 4965 8000"],
+  [<Users size={18} key="u" />, "Private Dining", "Bespoke Royal Thalis for parties of 10+"],
+  [<MapPin size={18} key="m" />, "Location", "12 MG Road, Indiranagar, Bengaluru"],
 ];
 
 export default async function ReservationsPage({
@@ -39,7 +40,10 @@ export default async function ReservationsPage({
   if (rest) {
     menuQuery = menuQuery.eq("restaurant_id", rest.id);
   }
-  const { data: menu } = await menuQuery;
+  const { data: dbMenu } = await menuQuery;
+  const INDIAN_CUISINES = ["North Indian", "South Indian", "Royal Mughlai", "Coastal Seafood", "Tandoor & Starters", "Mithai & Desserts"];
+  const validDbDishes = (dbMenu ?? []).filter((d: any) => INDIAN_CUISINES.includes(d.cuisine));
+  const menu = validDbDishes.length >= 6 ? validDbDishes : (MENU as any[]);
 
   return (
     <>

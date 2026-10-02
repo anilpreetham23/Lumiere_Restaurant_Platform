@@ -32,7 +32,7 @@ import {
 import { getActiveRestaurantId } from "@/actions/tenant";
 import type { MenuItem } from "@/lib/order";
 
-const DEFAULT_CUISINES = ["France", "Italy", "Japan", "India", "Spain", "Patisserie", "Beverages", "Desserts"];
+const DEFAULT_CUISINES = ["North Indian", "South Indian", "Royal Mughlai", "Coastal Seafood", "Tandoor & Starters", "Mithai & Desserts", "Beverages"];
 
 export default function MenuAdminPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -49,7 +49,7 @@ export default function MenuAdminPage() {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [form, setForm] = useState({
     title: "",
-    cuisine: "France",
+    cuisine: "North Indian",
     price: "",
     prep_minutes: "15",
     short: "",
@@ -185,7 +185,7 @@ export default function MenuAdminPage() {
     setEditingItem(null);
     setForm({
       title: "",
-      cuisine: activeCategory !== "All" ? activeCategory : "France",
+      cuisine: activeCategory !== "All" ? activeCategory : "North Indian",
       price: "",
       prep_minutes: "15",
       short: "",
@@ -204,7 +204,7 @@ export default function MenuAdminPage() {
     setEditingItem(it);
     setForm({
       title: it.title,
-      cuisine: it.cuisine || "France",
+      cuisine: it.cuisine || "North Indian",
       price: String(it.price),
       prep_minutes: String(it.prep_minutes || 15),
       short: it.short || "",

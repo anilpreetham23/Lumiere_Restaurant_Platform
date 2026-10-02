@@ -12,8 +12,8 @@ export default function Footer() {
             Lumi<span className="text-gold">ere</span>
           </div>
           <p className="text-sm leading-relaxed">
-            The world&apos;s finest culinary traditions under one roof in the heart of Mayfair. Every
-            plate crafted with reverence, served with grace.
+            India&apos;s finest regional culinary traditions under one roof in the heart of Bengaluru. Every
+            plate crafted with royal khansama reverence.
           </p>
           <Socials className="mt-5" />
         </div>
@@ -42,16 +42,16 @@ export default function Footer() {
           <h5 className="text-white text-sm font-semibold mb-4 tracking-wide">Visit</h5>
           <ul className="space-y-3 text-sm">
             <li className="flex gap-2">
-              <MapPin size={15} className="text-gold mt-0.5 shrink-0" /> 24 Belgrave Square, Mayfair, London W1J 5AA
+              <MapPin size={15} className="text-gold mt-0.5 shrink-0" /> 12 MG Road, Indiranagar, Bengaluru 560038
             </li>
             <li className="flex gap-2">
-              <Phone size={15} className="text-gold shrink-0" /> +44 (0)20 7946 0000
+              <Phone size={15} className="text-gold shrink-0" /> +91 80 4965 8000
             </li>
             <li className="flex gap-2">
               <Mail size={15} className="text-gold shrink-0" /> reservations@lumiere-dining.com
             </li>
             <li className="flex gap-2">
-              <Clock size={15} className="text-gold shrink-0" /> Wed-Sun 12pm-11pm
+              <Clock size={15} className="text-gold shrink-0" /> Mon-Sun 12pm-11:30pm
             </li>
           </ul>
         </div>

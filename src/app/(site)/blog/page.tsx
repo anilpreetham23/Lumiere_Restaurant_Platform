@@ -6,13 +6,13 @@ import Reveal from "@/components/Reveal";
 
 export const metadata: Metadata = {
   title: "Journal",
-  description: "Stories from the Lumiere kitchen - provenance, wine pairings and life behind the pass.",
+  description: "Stories from the Lumière kitchen — royal recipes, spice routes, and life behind the pass.",
 };
 
 const POSTS = [
-  ["/img/blog/1.jpg", "Kitchen Stories", "Behind the Pass: A Day with Our Executive Chef", "A morning market run, a hundred tiny decisions, and the quiet ritual that shapes every service.", "Alice Moreau", "14 Mar"],
-  ["/img/blog/2.jpg", "Cellar Notes", "The Art of the Pairing: Matching Wine to the World", "How our sommelier builds a thread of flavour across seven courses and five countries.", "The Sommelier", "28 Feb"],
-  ["/img/blog/3.jpg", "Provenance", "In Search of White Truffles: A Journey Through Piedmont", "Chasing the season's rarest ingredient through the misty hills of northern Italy.", "Marco Bianchi", "05 Jan"],
+  ["/img/blog/1.jpg", "Kitchen Stories", "Secrets of Lucknow: The Art of Dum Pukht Cooking", "A morning spice grinding ritual, sealed clay handis, and the slow-cooking secrets of Awadhi khansamas.", "Chef Rajesh Verma", "14 Mar"],
+  ["/img/blog/2.jpg", "Spice Route", "Spices of Kerala: A Journey Through the Pepper Coast", "Chasing Idukki green cardamom, Tellicherry black pepper, and nutmeg from Kerala spice gardens.", "Chef Priya Sundaram", "28 Feb"],
+  ["/img/blog/3.jpg", "Royal Desserts", "The Craft of Saffron & Silver Leaf Mithai", "How our master confectioners slow-simmer Rabri and craft golden Shahi Tukda with edible silver vark.", "Chef Vikram Malhotra", "05 Jan"],
 ];
 
 export default function BlogPage() {

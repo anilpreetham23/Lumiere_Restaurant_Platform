@@ -10,10 +10,10 @@ export const metadata: Metadata = {
 };
 
 const INFO: [React.ReactNode, string, string][] = [
-  [<MapPin size={18} key="a" />, "Address", "24 Belgrave Square, Mayfair, London W1J 5AA"],
-  [<Phone size={18} key="p" />, "Phone", "+44 (0)20 7946 0000"],
+  [<MapPin size={18} key="a" />, "Address", "12 MG Road, Indiranagar, Bengaluru, Karnataka 560038"],
+  [<Phone size={18} key="p" />, "Phone", "+91 80 4965 8000"],
   [<Mail size={18} key="e" />, "Email", "reservations@lumiere-dining.com"],
-  [<Clock size={18} key="c" />, "Hours", "Wed - Sun, 12pm - 11pm"],
+  [<Clock size={18} key="c" />, "Hours", "Mon - Sun, 12pm - 11:30pm"],
 ];
 
 export default function ContactPage() {

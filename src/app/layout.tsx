@@ -24,14 +24,14 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Lumiere - International Fine Dining | Mayfair, London",
-    template: "%s | Lumiere",
+    default: "Lumière — Royal Indian Fine Dining | Indiranagar, Bengaluru",
+    template: "%s | Lumière",
   },
   description:
-    "Lumiere is a curated journey through the world's great cuisines - French, Italian, Japanese, Indian and beyond - in the heart of Mayfair, London.",
+    "Lumière is a royal celebration of India's rich culinary traditions — Awadhi, Mughlai, Chettinad, Coastal, and Punjabi delicacies in the heart of Bengaluru, India.",
   openGraph: {
-    title: "Lumiere - International Fine Dining",
-    description: "A world of fine flavour on a single table. Mayfair, London.",
+    title: "Lumière — Royal Indian Fine Dining",
+    description: "A royal celebration of authentic Indian regional flavours on a single table. Indiranagar, Bengaluru.",
     type: "website",
   },
 };

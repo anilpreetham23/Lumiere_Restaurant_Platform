@@ -7,6 +7,8 @@ import RestaurantLogoHeader from "@/components/RestaurantLogoHeader";
 import { createClient } from "@/lib/supabase/server";
 import { resolvePublicRestaurantBySlug } from "@/lib/tenant";
 
+import { MENU } from "@/data/menu";
+
 export const dynamic = "force-dynamic";
 
 export default async function PublicRestaurantLandingPage({
@@ -37,12 +39,16 @@ export default async function PublicRestaurantLandingPage({
   }
 
   const supabase = await createClient();
-  const { data: menu } = await supabase
+  const { data: dbMenu } = await supabase
     .from("menu_items")
     .select("*")
     .eq("restaurant_id", restaurant.id)
     .eq("available", true)
     .order("sort");
+
+  const INDIAN_CUISINES = ["North Indian", "South Indian", "Royal Mughlai", "Coastal Seafood", "Tandoor & Starters", "Mithai & Desserts"];
+  const validDbDishes = (dbMenu ?? []).filter((d: any) => INDIAN_CUISINES.includes(d.cuisine));
+  const menu = validDbDishes.length >= 6 ? validDbDishes : (MENU as any[]);
 
   const logoUrl = restaurant.branding?.logo_url || restaurant.logo || "/Shinchan.jpg";
   const watermarkEnabled = restaurant.branding?.background_logo_enabled ?? true;

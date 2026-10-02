@@ -1,11 +1,11 @@
 const ITEMS = [
-  "French Haute Cuisine",
-  "Italian Classics",
-  "Japanese Omakase",
-  "Indian Spice Route",
-  "Spanish Tapas",
-  "French Patisserie",
-  "Sommelier Wines",
+  "Royal Awadhi Biryanis",
+  "North Indian Tandoor",
+  "Chettinad Coastal Seafood",
+  "Mughlai Kebabs & Kormas",
+  "Artisanal Indian Mithai",
+  "Kashmiri Saffron Flavours",
+  "Crafted Botanical Coolers",
 ];
 
 export default function Marquee() {

@@ -4,11 +4,11 @@ import MenuBrowser from "@/components/MenuBrowser";
 import PageHero from "@/components/PageHero";
 import { createClient } from "@/lib/supabase/server";
 import { resolvePublicRestaurantBySlug } from "@/lib/tenant";
-import { type Dish } from "@/data/menu";
+import { type Dish, MENU } from "@/data/menu";
 
 export const metadata: Metadata = {
   title: "Menu",
-  description: "The full Lumiere carte - signature plates from France, Italy, Japan, India, Spain and our patisserie.",
+  description: "The full Lumiere menu - royal delicacies from North India, South India, Mughlai kitchens, Coastal sea catches, and handcrafted Mithai.",
 };
 
 export const dynamic = "force-dynamic";
@@ -26,13 +26,16 @@ export default async function MenuPage({
     query = query.eq("restaurant_id", rest.id);
   }
   const { data } = await query;
-  const dishes = (data ?? []).map((d: any) => ({ ...d, price: Number(d.price) })) as Dish[];
+  const dbDishes = (data as Dish[]) || [];
+  const INDIAN_CUISINES = ["North Indian", "South Indian", "Royal Mughlai", "Coastal Seafood", "Tandoor & Starters", "Mithai & Desserts"];
+  const validDbDishes = dbDishes.filter((d: any) => INDIAN_CUISINES.includes(d.cuisine));
+  const dishes = validDbDishes.length >= 6 ? validDbDishes : MENU;
   return (
     <>
       <PageHero
-        label="The Carte"
-        title="Our Signature Plates"
-        sub="Each dish is a passport stamp - rooted in tradition, finished with the precision of haute cuisine."
+        label="Royal Carte"
+        title="Our Signature Indian Dishes"
+        sub="Every dish is a tribute to India's culinary royalty — rooted in heritage recipes, stone-ground spices, and unhurried craftsmanship."
       />
       <section className="py-16 bg-white">
         <div className="mx-auto max-w-6xl px-5">
