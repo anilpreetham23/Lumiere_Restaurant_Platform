@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
-import { User, ArrowRight, Clock, Sparkles, BookOpen, X, ChevronRight } from "lucide-react";
+import { User, ArrowRight, Clock, BookOpen, X } from "lucide-react";
 import PageHero from "@/components/PageHero";
 import Reveal from "@/components/Reveal";
 import { JournalPost, getJournalPostsAction } from "@/actions/journal";
@@ -21,6 +21,18 @@ export default function BlogPage() {
     }
     load();
   }, []);
+
+  // Lock body scroll when story modal is active
+  useEffect(() => {
+    if (selectedPost) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [selectedPost]);
 
   return (
     <>
@@ -100,19 +112,25 @@ export default function BlogPage() {
         </div>
       </section>
 
-      {/* Reader Modal */}
+      {/* Reader Modal Overlay */}
       {selectedPost && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-neutral-200 p-6 md:p-8 space-y-6 relative">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedPost(null);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 md:p-6 bg-slate-950/75 backdrop-blur-sm animate-in fade-in overflow-y-auto"
+        >
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[85vh] overflow-y-auto shadow-2xl border border-neutral-200 p-6 md:p-8 space-y-6 relative custom-scrollbar">
             {/* Close Button */}
             <button
               onClick={() => setSelectedPost(null)}
-              className="absolute top-6 right-6 p-2 bg-neutral-100 hover:bg-wine hover:text-white rounded-full transition text-neutral-600 z-10"
+              className="absolute top-6 right-6 p-2.5 bg-white/80 hover:bg-wine hover:text-white rounded-full transition text-neutral-700 z-20 shadow-md border border-neutral-200/50"
+              title="Close Story"
             >
               <X className="w-5 h-5" />
             </button>
 
-            {/* Modal Image */}
+            {/* Modal Image Header */}
             <div className="relative h-64 md:h-80 -mx-6 -mt-6 md:-mx-8 md:-mt-8 overflow-hidden rounded-t-3xl">
               <Image
                 src={selectedPost.image_url || "/img/blog/1.jpg"}
@@ -120,9 +138,9 @@ export default function BlogPage() {
                 fill
                 className="object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
               <div className="absolute bottom-6 left-6 right-6 text-white space-y-2">
-                <span className="bg-gold text-ink text-[0.65rem] px-3 py-1 rounded-full uppercase tracking-wider font-bold">
+                <span className="bg-gold text-ink text-[0.65rem] px-3 py-1 rounded-full uppercase tracking-wider font-bold shadow-xs">
                   {selectedPost.category}
                 </span>
                 <h2 className="font-serif text-2xl md:text-3xl font-bold leading-tight drop-shadow-md">
@@ -133,28 +151,28 @@ export default function BlogPage() {
 
             {/* Author Meta */}
             <div className="flex items-center justify-between pb-4 border-b border-neutral-100 text-xs text-neutral-500">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-full bg-wine/10 text-wine flex items-center justify-center font-serif font-bold text-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-wine/10 text-wine flex items-center justify-center font-serif font-bold text-sm border border-wine/20">
                   {selectedPost.author_name.charAt(0)}
                 </div>
                 <div>
-                  <div className="font-bold text-ink">{selectedPost.author_name}</div>
-                  <div className="text-[10px] text-neutral-400">{selectedPost.author_role || "Lumière Khansama"}</div>
+                  <div className="font-bold text-ink text-sm">{selectedPost.author_name}</div>
+                  <div className="text-[11px] text-neutral-400">{selectedPost.author_role || "Lumière Khansama"}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 text-neutral-400">
+              <div className="flex items-center gap-1.5 text-neutral-500 font-medium">
                 <Clock className="w-4 h-4 text-gold" />
                 <span>{selectedPost.read_time || "5 min read"}</span>
               </div>
             </div>
 
             {/* Post Excerpt Highlight */}
-            <div className="p-4 bg-cream/70 rounded-2xl border-l-4 border-wine text-ink text-sm font-serif italic leading-relaxed">
+            <div className="p-4 bg-cream/80 rounded-2xl border-l-4 border-wine text-ink text-sm font-serif italic leading-relaxed">
               "{selectedPost.excerpt}"
             </div>
 
             {/* Main Content Body */}
-            <div className="text-neutral-700 text-sm md:text-base leading-relaxed space-y-4 font-sans whitespace-pre-line">
+            <div className="text-neutral-800 text-sm md:text-base leading-relaxed space-y-4 font-sans whitespace-pre-line pr-1">
               {selectedPost.content}
             </div>
 
@@ -163,7 +181,7 @@ export default function BlogPage() {
               <span className="text-xs text-neutral-400 font-serif">Lumière Royal Fine Dining • The Journal</span>
               <button
                 onClick={() => setSelectedPost(null)}
-                className="px-5 py-2 bg-wine text-white text-xs font-semibold rounded-xl hover:bg-wine-dark transition"
+                className="px-6 py-2.5 bg-wine text-white text-xs font-semibold rounded-xl hover:bg-wine-dark transition shadow-md"
               >
                 Close Story
               </button>
