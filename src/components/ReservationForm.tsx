@@ -22,6 +22,7 @@ export default function ReservationForm({
   const [error, setError] = useState<string | null>(null);
   const [showPre, setShowPre] = useState(false);
   const [pre, setPre] = useState<Record<string, number>>({});
+  const [payDeposit, setPayDeposit] = useState(true);
   const [form, setForm] = useState({
     name: "", phone: "", email: "", guests: "2 People", date: "", time: "7:00 PM", requests: "",
   });
@@ -67,7 +68,7 @@ export default function ReservationForm({
     e.preventDefault();
     setState("loading"); setError(null);
     const pre_order = Object.entries(pre).map(([menu_item_id, qty]) => ({ menu_item_id, qty }));
-    const res = await createReservation({ ...form, pre_order, restaurant_slug: restaurantSlug });
+    const res = await createReservation({ ...form, pre_order, restaurant_slug: restaurantSlug, pay_deposit: payDeposit });
     if (!res.ok) { setError(res.error ?? "Something went wrong."); setState("idle"); return; }
 
     if (res.payEnabled && res.id && (res.deposit ?? 0) > 0) {
@@ -115,11 +116,17 @@ export default function ReservationForm({
         <CheckCircle2 size={48} className="text-gold mx-auto mb-4" />
         <h3 className="font-serif text-2xl mb-2">Reservation Confirmed</h3>
         <p className="text-neutral-500 mb-4">
-          Thank you! Your deposit payment has been received and your table is confirmed. Our maître d&apos; will send a confirmation email shortly.
+          Thank you! Your table is confirmed. Our maître d&apos; will send a confirmation email shortly.
         </p>
-        <span className="inline-block bg-cream2 text-wine font-medium text-xs px-3 py-1.5 rounded-full">
-          Deposit Paid: ₹500
-        </span>
+        {payDeposit ? (
+          <span className="inline-block bg-cream2 text-wine font-medium text-xs px-3 py-1.5 rounded-full">
+            Deposit Paid: ₹500
+          </span>
+        ) : (
+          <span className="inline-block bg-emerald-50 text-emerald-800 font-medium text-xs px-3 py-1.5 rounded-full border border-emerald-200">
+            Standard Table Booking (Free)
+          </span>
+        )}
       </div>
     );
   }
@@ -160,6 +167,51 @@ export default function ReservationForm({
         <textarea rows={2} className="field" placeholder="Allergies, dietary needs, occasions..." value={form.requests} onChange={(e) => setForm({ ...form, requests: e.target.value })} />
       </div>
 
+      {/* Optional Deposit Selection Card */}
+      <div className="sm:col-span-2 bg-cream/60 border border-gold/30 rounded-xl p-4 space-y-3">
+        <div className="text-xs font-semibold uppercase tracking-wider text-wine flex items-center justify-between">
+          <span>Table Guarantee & Deposit Options</span>
+          <span className="text-[10px] text-neutral-500 font-normal">Select booking preference</span>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3 text-xs">
+          <button
+            type="button"
+            onClick={() => setPayDeposit(true)}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              payDeposit
+                ? "bg-white border-wine shadow-xs ring-1 ring-wine"
+                : "bg-white/60 border-cream2 hover:border-gold"
+            }`}
+          >
+            <div className="font-semibold text-ink flex items-center justify-between">
+              <span>Priority Table Guarantee</span>
+              <span className="text-wine font-bold font-mono">₹500</span>
+            </div>
+            <p className="text-[11px] text-neutral-500 mt-1 leading-relaxed">
+              Pay ₹500 deposit now via Razorpay. Guarantees priority seating & 100% credited to your final bill.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPayDeposit(false)}
+            className={`p-3 rounded-xl border text-left transition-all ${
+              !payDeposit
+                ? "bg-white border-wine shadow-xs ring-1 ring-wine"
+                : "bg-white/60 border-cream2 hover:border-gold"
+            }`}
+          >
+            <div className="font-semibold text-ink flex items-center justify-between">
+              <span>Standard Reservation</span>
+              <span className="text-emerald-700 font-bold font-mono">Free</span>
+            </div>
+            <p className="text-[11px] text-neutral-500 mt-1 leading-relaxed">
+              Book table without upfront deposit. Request is sent to maître d&apos;, subject to arrival availability.
+            </p>
+          </button>
+        </div>
+      </div>
+
       {/* optional pre-order */}
       {menu.length > 0 && (
         <div className="sm:col-span-2 border border-cream2 rounded-xl p-4">
@@ -192,10 +244,12 @@ export default function ReservationForm({
       <div className="sm:col-span-2">
         <button disabled={state === "loading"} className="btn-gold w-full justify-center disabled:opacity-70">
           {state === "loading" ? <Loader2 className="animate-spin" size={18} /> : <CalendarCheck size={18} />}
-          Confirm Reservation
+          {payDeposit ? "Confirm & Pay ₹500 Deposit" : "Confirm Free Reservation"}
         </button>
         <p className="text-center text-[0.7rem] text-neutral-400 mt-2">
-          A refundable deposit may be requested to secure your table, applied to your final bill.
+          {payDeposit
+            ? "Your ₹500 deposit is 100% credited against your final dining bill upon arrival."
+            : "Free reservation request. No payment required right now."}
         </p>
       </div>
     </form>

@@ -251,6 +251,7 @@ export function AdminNavigation({
       items: [
         { href: "/admin/menu", label: "Menu", icon: BookOpen },
         { href: "/admin/recipes", label: "Recipes", icon: ChefHat },
+        { href: "/admin/journal", label: "Journal Articles", icon: Sparkles },
       ],
     },
     {

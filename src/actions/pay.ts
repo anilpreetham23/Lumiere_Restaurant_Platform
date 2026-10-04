@@ -380,10 +380,11 @@ export type ReservationInput = {
   date: string; time: string; requests?: string;
   pre_order?: { menu_item_id: string; qty: number }[];
   restaurant_slug?: string;
+  pay_deposit?: boolean;
 };
 
-// Create the reservation. If payments are on, it starts as deposit-pending
-// (confirmed after the deposit is paid); otherwise it's a free request.
+// Create the reservation. If payments are on and pay_deposit is true (or default),
+// it starts as deposit-pending (confirmed after deposit is paid); otherwise it's a free request.
 export async function createReservation(
   input: ReservationInput
 ): Promise<{ ok: boolean; id?: string; deposit?: number; payEnabled?: boolean; error?: string }> {
@@ -412,7 +413,8 @@ export async function createReservation(
     targetRestaurantId = defaultRest.id;
   }
 
-  const payEnabled = paymentsEnabled();
+  const userWantsDeposit = input.pay_deposit !== false;
+  const payEnabled = paymentsEnabled() && userWantsDeposit;
   const deposit = payEnabled ? RES_DEPOSIT() : 0;
 
   const insertPayload: Record<string, unknown> = {
@@ -427,19 +429,6 @@ export async function createReservation(
     pre_order: input.pre_order ?? null,
   };
 
-  if (!serviceRoleConfigured()) {
-    // no service role → fall back to the plain public insert (anon)
-    const supabase = await createClient();
-    const { error } = await supabase.from("reservations").insert({
-      ...insertPayload,
-      status: "pending",
-      deposit_amount: 0,
-      deposit_status: "none",
-    });
-    if (error) return { ok: false, error: error.message };
-    return { ok: true, deposit: 0, payEnabled: false };
-  }
-
   const admin = createAdminClient();
   const { data, error } = await admin.from("reservations").insert({
     ...insertPayload,
@@ -447,7 +436,20 @@ export async function createReservation(
     deposit_status: deposit > 0 ? "pending" : "none",
     status: "pending",
   }).select("id").single();
-  if (error) return { ok: false, error: error.message };
+
+  if (error) {
+    const supabase = await createClient();
+    const { data: pubData, error: pubErr } = await supabase.from("reservations").insert({
+      ...insertPayload,
+      status: "pending",
+      deposit_amount: deposit,
+      deposit_status: deposit > 0 ? "pending" : "none",
+    }).select("id").single();
+
+    if (pubErr) return { ok: false, error: pubErr.message };
+    return { ok: true, id: pubData?.id, deposit, payEnabled };
+  }
+
   return { ok: true, id: data.id, deposit, payEnabled };
 }
 
