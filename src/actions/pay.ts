@@ -435,22 +435,44 @@ export async function createReservation(
     deposit_amount: deposit,
     deposit_status: deposit > 0 ? "pending" : "none",
     status: "pending",
-  }).select("id").single();
+  }).select("id").maybeSingle();
 
-  if (error) {
-    const supabase = await createClient();
-    const { data: pubData, error: pubErr } = await supabase.from("reservations").insert({
-      ...insertPayload,
-      status: "pending",
-      deposit_amount: deposit,
-      deposit_status: deposit > 0 ? "pending" : "none",
-    }).select("id").single();
-
-    if (pubErr) return { ok: false, error: pubErr.message };
-    return { ok: true, id: pubData?.id, deposit, payEnabled };
+  if (!error && data?.id) {
+    return { ok: true, id: data.id, deposit, payEnabled };
   }
 
-  return { ok: true, id: data.id, deposit, payEnabled };
+  const supabase = await createClient();
+  const { data: pubData, error: pubErr } = await supabase.from("reservations").insert({
+    ...insertPayload,
+    status: "pending",
+    deposit_amount: deposit,
+    deposit_status: deposit > 0 ? "pending" : "none",
+  }).select("id").maybeSingle();
+
+  if (!pubErr && pubData?.id) {
+    return { ok: true, id: pubData.id, deposit, payEnabled };
+  }
+
+  // Final fallback: SECURITY DEFINER RPC helper
+  const { data: rpcData, error: rpcErr } = await supabase.rpc("create_public_reservation", {
+    p_restaurant_id: targetRestaurantId,
+    p_name: input.name,
+    p_phone: input.phone,
+    p_email: input.email,
+    p_guests: input.guests,
+    p_date: input.date,
+    p_time: input.time,
+    p_requests: input.requests || null,
+    p_pre_order: input.pre_order ?? null,
+    p_deposit_amount: deposit,
+    p_deposit_status: deposit > 0 ? "pending" : "none",
+  });
+
+  if (rpcErr || !rpcData || !rpcData.ok) {
+    return { ok: false, error: pubErr?.message || rpcErr?.message || "Failed to create reservation." };
+  }
+
+  return { ok: true, id: rpcData.id, deposit, payEnabled };
 }
 
 export async function startReservationDeposit(rid: string): Promise<StartResult> {
