@@ -20,7 +20,7 @@ export type JournalPost = {
   created_at: string;
 };
 
-export const DEFAULT_JOURNAL_POSTS: JournalPost[] = [
+const DEFAULT_JOURNAL_POSTS: JournalPost[] = [
   {
     id: "post-1",
     slug: "secrets-of-lucknow-dum-pukht",
