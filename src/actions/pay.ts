@@ -672,3 +672,44 @@ export async function verifyReservationDeposit(
   return { ok: true };
 }
 
+export async function startPublicOrderRazorpayPayment(orderId: string, amount: number): Promise<StartResult> {
+  const keyId = process.env.RAZORPAY_KEY_ID;
+  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) return { ok: false, error: "Razorpay payment gateway not configured." };
+
+  const paise = Math.round(amount * 100);
+
+  try {
+    const res = await fetch("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Basic " + Buffer.from(`${keyId}:${keySecret}`).toString("base64"),
+      },
+      body: JSON.stringify({
+        amount: paise,
+        currency: "INR",
+        notes: { order_id: orderId }
+      }),
+    });
+
+    if (!res.ok) {
+      return { ok: false, error: "Razorpay order creation failed (" + res.status + ")." };
+    }
+
+    const order = await res.json();
+    return {
+      ok: true,
+      gateway: "razorpay",
+      orderId: order.id,
+      keyId,
+      amount: paise,
+      name: "Lumière Fine Dining",
+      label: "Online Food Order"
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Razorpay error" };
+  }
+}
+
+
