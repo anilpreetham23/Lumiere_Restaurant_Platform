@@ -91,6 +91,29 @@ function formatMoney(amount: number): string {
   }).format(amount);
 }
 
+function playKitchenChime() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5 note
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.2); // A5 note
+
+    gain.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime + 0.6);
+  } catch (e) {
+    console.log("Audio alert blocked by browser policy", e);
+  }
+}
+
 export default function KitchenPage() {
   const supabase = useMemo(() => createClient(), []);
   
@@ -102,14 +125,13 @@ export default function KitchenPage() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [recipes, setRecipes] = useState<RecipeItem[]>([]);
-  
   const [busy, setBusy] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState<"all" | "new" | "preparing" | "ready">("all");
   const [chefSearch, setChefSearch] = useState("");
   const [specialsOnly, setSpecialsOnly] = useState(false);
-
-  // Timer ticker state for live elapsed/remaining prep times
   const [nowTs, setNowTs] = useState<number>(Date.now());
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const prevOrdersCount = React.useRef<number>(0);
 
   useEffect(() => {
     const timer = setInterval(() => setNowTs(Date.now()), 1000);
@@ -162,6 +184,12 @@ export default function KitchenPage() {
       if (isMarketplace && ord.status === "placed") return false;
       return true;
     });
+
+    // Play kitchen chime audio if new orders arrive and audio is enabled
+    if (activeOrders.length > prevOrdersCount.current && prevOrdersCount.current !== 0) {
+      playKitchenChime();
+    }
+    prevOrdersCount.current = activeOrders.length;
 
     setOrders(activeOrders);
     setSessions((s.data ?? []) as SessionRow[]);
@@ -305,9 +333,20 @@ export default function KitchenPage() {
           </button>
 
           <button
+            onClick={() => {
+              playKitchenChime();
+              setAudioEnabled(true);
+            }}
+            title="Test Kitchen Audio Chime"
+            className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl text-xs font-semibold transition border border-amber-200 flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>🔔 Sound Alert Active</span>
+          </button>
+
+          <button
             onClick={load}
             title="Refresh KDS"
-            className="p-2 bg-cream hover:bg-cream2 text-wine rounded-xl text-xs font-semibold transition border border-cream2"
+            className="p-2 bg-cream hover:bg-cream2 text-wine rounded-xl text-xs font-semibold transition border border-cream2 cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
           </button>

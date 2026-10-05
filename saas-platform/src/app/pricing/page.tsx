@@ -5,15 +5,18 @@ import Link from "next/link";
 import PageWrapper from "@/components/PageWrapper";
 import {
   Check,
+  X,
   Sparkles,
   ArrowRight,
   ShieldCheck,
   HelpCircle,
+  Layers,
 } from "lucide-react";
 
 export default function PricingPage() {
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [showMatrix, setShowMatrix] = useState(true);
 
   const PLANS = [
     {
@@ -71,6 +74,51 @@ export default function PricingPage() {
     },
   ];
 
+  const MATRIX_CATEGORIES = [
+    {
+      category: "POS & Floor Management",
+      items: [
+        { name: "Max Restaurant Outlets", starter: "1 Outlet", growth: "Up to 3 Outlets", enterprise: "Unlimited Outlets" },
+        { name: "Waiter Handheld POS Tablets", starter: "2 Devices", growth: "Unlimited Devices", enterprise: "Unlimited Devices" },
+        { name: "Offline Local Sync Buffer", starter: true, growth: true, enterprise: true },
+        { name: "Split Check & Table Merge", starter: true, growth: true, enterprise: true },
+      ],
+    },
+    {
+      category: "Kitchen KDS & Routing",
+      items: [
+        { name: "Kitchen Bump Bar Stations", starter: "1 Station", growth: "4 Stations (Tandoor/Mains/Bar)", enterprise: "Custom Stations" },
+        { name: "Audio Chime Sound Alerts", starter: true, growth: true, enterprise: true },
+        { name: "Kitchen Prep Bottleneck Analytics", starter: false, growth: true, enterprise: true },
+      ],
+    },
+    {
+      category: "Priority Reservations & Deposits",
+      items: [
+        { name: "Standard Free Table Bookings", starter: true, growth: true, enterprise: true },
+        { name: "₹500 Razorpay Priority Deposit", starter: false, growth: true, enterprise: true },
+        { name: "WhatsApp Booking Vouchers", starter: false, growth: true, enterprise: true },
+        { name: "Guest Memory & Dietary CRM", starter: false, growth: true, enterprise: true },
+      ],
+    },
+    {
+      category: "Marketplace & Inventory",
+      items: [
+        { name: "Swiggy & Zomato Aggregator Sync", starter: false, growth: true, enterprise: true },
+        { name: "1-Click Global Auto-86 Toggle", starter: false, growth: true, enterprise: true },
+        { name: "Recipe Ingredient COGS Deduction", starter: "Basic", growth: "Automatic BOM", enterprise: "Automatic BOM" },
+        { name: "Inter-Outlet Stock Transfers", starter: false, growth: false, enterprise: true },
+      ],
+    },
+    {
+      category: "Support & SLA",
+      items: [
+        { name: "Support Tier", starter: "Email Support", growth: "24/7 WhatsApp & Phone", enterprise: "Dedicated Success Mgr" },
+        { name: "Database SLA Isolation", starter: "Shared Cloud", growth: "Multi-Tenant High Uptime", enterprise: "Dedicated Instance" },
+      ],
+    },
+  ];
+
   const FAQS = [
     {
       q: "How does the 14-day free trial work?",
@@ -117,7 +165,7 @@ export default function PricingPage() {
             </span>
             <button
               onClick={() => setBillingCycle(billingCycle === "monthly" ? "annual" : "monthly")}
-              className="w-14 h-8 rounded-full bg-slate-800 p-1 border border-slate-700 relative transition-colors focus:outline-none"
+              className="w-14 h-8 rounded-full bg-slate-800 p-1 border border-slate-700 relative transition-colors focus:outline-none cursor-pointer"
             >
               <div
                 className={`w-6 h-6 rounded-full bg-gold transition-transform ${
@@ -207,6 +255,72 @@ export default function PricingPage() {
         </div>
       </section>
 
+      {/* FEATURE COMPARISON MATRIX TABLE */}
+      <section className="py-12 bg-slate-900/40 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+          <div className="text-center space-y-2">
+            <span className="text-gold font-mono text-xs uppercase tracking-widest font-semibold">Detailed Breakdown</span>
+            <h2 className="font-serif text-3xl font-bold text-white">Full Feature Comparison Matrix</h2>
+          </div>
+
+          <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 overflow-x-auto shadow-2xl">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                  <th className="py-4 px-4 w-1/3">Feature Capabilities</th>
+                  <th className="py-4 px-4 text-center">Starter Outlet</th>
+                  <th className="py-4 px-4 text-center text-gold font-bold">Growth Fine Dining</th>
+                  <th className="py-4 px-4 text-center">Enterprise Franchise</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/80">
+                {MATRIX_CATEGORIES.map((cat, cIdx) => (
+                  <React.Fragment key={cIdx}>
+                    <tr className="bg-navy-950/80">
+                      <td colSpan={4} className="py-3 px-4 text-gold font-bold text-xs uppercase tracking-widest font-mono">
+                        {cat.category}
+                      </td>
+                    </tr>
+                    {cat.items.map((item, iIdx) => (
+                      <tr key={iIdx} className="hover:bg-slate-800/40 transition">
+                        <td className="py-3.5 px-4 font-medium text-slate-200">{item.name}</td>
+                        
+                        {/* Starter */}
+                        <td className="py-3.5 px-4 text-center text-slate-300">
+                          {typeof item.starter === "boolean" ? (
+                            item.starter ? <Check className="w-4 h-4 text-emerald-400 mx-auto" /> : <X className="w-4 h-4 text-slate-600 mx-auto" />
+                          ) : (
+                            item.starter
+                          )}
+                        </td>
+
+                        {/* Growth */}
+                        <td className="py-3.5 px-4 text-center text-gold font-semibold bg-gold/5">
+                          {typeof item.growth === "boolean" ? (
+                            item.growth ? <Check className="w-4 h-4 text-emerald-400 mx-auto" /> : <X className="w-4 h-4 text-slate-600 mx-auto" />
+                          ) : (
+                            item.growth
+                          )}
+                        </td>
+
+                        {/* Enterprise */}
+                        <td className="py-3.5 px-4 text-center text-slate-300">
+                          {typeof item.enterprise === "boolean" ? (
+                            item.enterprise ? <Check className="w-4 h-4 text-emerald-400 mx-auto" /> : <X className="w-4 h-4 text-slate-600 mx-auto" />
+                          ) : (
+                            item.enterprise
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       {/* FAQ ACCORDION */}
       <section className="py-16 bg-navy-950/60 border-t border-slate-800">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
@@ -225,7 +339,7 @@ export default function PricingPage() {
                 >
                   <button
                     onClick={() => setOpenFaq(isOpen ? null : index)}
-                    className="w-full p-5 text-left font-serif text-base font-bold text-white flex justify-between items-center gap-4 hover:text-gold transition"
+                    className="w-full p-5 text-left font-serif text-base font-bold text-white flex justify-between items-center gap-4 hover:text-gold transition cursor-pointer"
                   >
                     <span>{faq.q}</span>
                     <span className="text-gold text-xl">{isOpen ? "−" : "+"}</span>

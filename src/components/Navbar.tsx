@@ -37,9 +37,15 @@ export default function Navbar() {
           <span className="flex items-center gap-2">
             <Phone size={12} className="text-gold" /> +91 93465 43338 &middot; 12 MG Road, Indiranagar, Bengaluru
           </span>
-          <span className="text-gold tracking-widest uppercase text-[0.65rem]">
-            Now accepting reservations
-          </span>
+          <div className="flex items-center gap-4 text-gold text-[0.7rem] font-medium">
+            <Link href="/order/track" className="hover:underline flex items-center gap-1">
+              Live Order Tracker
+            </Link>
+            <span>&middot;</span>
+            <Link href="/reservations/lookup" className="hover:underline flex items-center gap-1">
+              Deposit Pass Lookup
+            </Link>
+          </div>
         </div>
       </div>
 

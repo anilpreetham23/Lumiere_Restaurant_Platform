@@ -13,6 +13,9 @@ import {
   CheckCircle2,
   Users,
   Building,
+  Star,
+  Quote,
+  TrendingUp,
 } from "lucide-react";
 
 export default function SolutionsPage() {
@@ -64,6 +67,33 @@ export default function SolutionsPage() {
         "Franchisee compliance audit checklists & low-stock alerts",
         "Dedicated franchisee login roles with scoped permission rules",
       ],
+    },
+  ];
+
+  const CASE_STUDIES = [
+    {
+      restaurant: "Royal Biryani House",
+      location: "Bengaluru (3 Outlets)",
+      result: "Recovered ₹85,000/mo in table no-shows",
+      quote: "Prior to Lumière OS, weekend table no-shows cost us thousands every Friday. Implementing ₹500 Razorpay priority deposits reduced no-shows to virtually 0%.",
+      author: "Rajesh V. (Managing Director)",
+      stat: "0% No-Shows",
+    },
+    {
+      restaurant: "Saffron Heritage Fine Dining",
+      location: "Hyderabad (Jubilee Hills)",
+      result: "Prep times reduced from 9.4m to 4.1m",
+      quote: "The station-based KDS bump bar allowed our line chefs to coordinate Tandoor and Main Course firings seamlessly without yelling across the pass.",
+      author: "Chef Vikram Seth (Executive Chef)",
+      stat: "4.1m Avg Prep",
+    },
+    {
+      restaurant: "The Copper Handi Group",
+      location: "Delhi NCR (12 Outlets)",
+      result: "1-Click menu 86 availability across Swiggy/Zomato",
+      quote: "Managing 12 cloud kitchen outlets on delivery apps used to take 2 hours every morning. Lumière OS lets us toggle out-of-stock items across all brands in 1 second.",
+      author: "Neha Kapoor (Head of Ops)",
+      stat: "12 Outlets Synced",
     },
   ];
 
@@ -128,6 +158,47 @@ export default function SolutionsPage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* CASE STUDIES SECTION */}
+      <section className="py-16 bg-navy-950/80 border-t border-slate-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-12">
+          <div className="text-center space-y-3">
+            <span className="text-gold font-mono text-xs uppercase tracking-widest font-semibold">Real Operator Impact</span>
+            <h2 className="font-serif text-3xl font-bold text-white">Restaurant Success Stories</h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {CASE_STUDIES.map((cs, idx) => (
+              <div
+                key={idx}
+                className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 space-y-4 relative flex flex-col justify-between"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-gold text-xs font-mono font-bold bg-gold/10 border border-gold/20 px-2.5 py-1 rounded-full">
+                      {cs.stat}
+                    </span>
+                    <div className="flex text-amber-400">
+                      {[...Array(5)].map((_, i) => (
+                        <Star key={i} size={12} className="fill-current" />
+                      ))}
+                    </div>
+                  </div>
+
+                  <h3 className="font-serif text-xl font-bold text-white">{cs.restaurant}</h3>
+                  <div className="text-xs text-slate-400 font-mono">{cs.location}</div>
+                  <div className="text-xs font-semibold text-emerald-400 font-mono">{cs.result}</div>
+                  <p className="text-slate-300 text-xs leading-relaxed italic">&ldquo;{cs.quote}&rdquo;</p>
+                </div>
+
+                <div className="pt-4 border-t border-slate-800 text-[11px] text-slate-400 font-medium">
+                  {cs.author}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
