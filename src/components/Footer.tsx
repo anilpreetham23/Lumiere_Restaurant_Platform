@@ -70,6 +70,7 @@ export default function Footer() {
             <Link href="/legal/terms" className="hover:text-gold">Terms</Link>
             <Link href="/legal/refunds" className="hover:text-gold">Refunds</Link>
             <Link href="/admin" className="hover:text-gold">Staff</Link>
+            <a href="http://localhost:3001" target="_blank" rel="noopener noreferrer" className="hover:text-gold text-gold font-medium">SaaS Platform (Port 3001) &rarr;</a>
           </div>
         </div>
       </div>
