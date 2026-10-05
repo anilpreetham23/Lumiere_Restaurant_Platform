@@ -83,7 +83,7 @@ export default function ReservationLookupPage() {
 
         {/* LUXURY RESERVATION VOUCHER CARD */}
         {reservation && (
-          <div className="bg-white border-2 border-gold/40 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8 relative overflow-hidden print:border-none print:shadow-none">
+          <div className="print-voucher bg-white border-2 border-gold/40 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8 relative overflow-hidden">
             {/* VOUCHER HEADER */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-cream2 pb-6">
               <div>

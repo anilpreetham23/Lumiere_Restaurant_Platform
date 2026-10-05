@@ -83,3 +83,27 @@ h1, h2, h3, h4, h5 { font-family: var(--font-serif); }
 @keyframes plspin { to { transform: rotate(360deg); } }
 @keyframes plload { 0% { transform: translateX(-120%); } 100% { transform: translateX(360%); } }
 @media (prefers-reduced-motion: reduce) { .marquee-track { animation: none; } * { scroll-behavior: auto; } }
+
+/* ============================================================
+   PRINT STYLES FOR RESERVATION VOUCHERS & RECEIPTS
+   ============================================================ */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  header, nav, footer, .print\:hidden, form {
+    display: none !important;
+  }
+  .bg-cream {
+    background: #ffffff !important;
+    padding: 0 !important;
+  }
+  .print-voucher {
+    border: 2px solid #c8a24d !important;
+    box-shadow: none !important;
+    margin: 0 auto !important;
+    max-width: 100% !important;
+    page-break-inside: avoid !important;
+  }
+}
