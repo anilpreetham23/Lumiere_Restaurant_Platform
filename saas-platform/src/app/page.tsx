@@ -3,17 +3,22 @@
 import React from "react";
 import Link from "next/link";
 import PageWrapper from "@/components/PageWrapper";
+import InteractiveSystemConsole from "@/components/InteractiveSystemConsole";
+import InteractiveROICalculator from "@/components/InteractiveROICalculator";
 import {
   Sparkles,
   ArrowRight,
   ShieldCheck,
   Layers,
-  ShoppingBag,
   Store,
   DollarSign,
   CheckCircle2,
   ExternalLink,
   ChevronRight,
+  Activity,
+  Cpu,
+  Flame,
+  Zap,
 } from "lucide-react";
 
 export default function HomePage() {
@@ -24,9 +29,9 @@ export default function HomePage() {
         {/* Background Glow Effects */}
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-gold/10 via-wine/20 to-transparent blur-[140px] rounded-full pointer-events-none" />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 space-y-12">
           <div className="text-center max-w-4xl mx-auto space-y-6">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900/90 border border-gold/30 text-gold text-xs font-semibold uppercase tracking-wider backdrop-blur-md shadow-xl animate-fade-in">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-slate-900/90 border border-gold/30 text-gold text-xs font-semibold uppercase tracking-wider backdrop-blur-md shadow-xl">
               <Sparkles className="w-4 h-4 text-gold animate-pulse" />
               <span>Next-Gen B2B Multi-Tenant Restaurant OS</span>
             </div>
@@ -42,7 +47,7 @@ export default function HomePage() {
               Unify table reservations, refundable deposits, real-time Kitchen KDS bump bars, Swiggy & Zomato order sync, floor plan waiter POS, recipe COGS inventory, and editorial CMS into one high-performance SaaS engine.
             </p>
 
-            <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-4">
+            <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
                 href="/pricing"
                 className="btn-gold w-full sm:w-auto px-8 py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-3 shadow-2xl shadow-gold/20 hover:scale-105 transition-all"
@@ -71,25 +76,43 @@ export default function HomePage() {
             </div>
 
             {/* Micro Badge Stats */}
-            <div className="pt-10 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-4xl mx-auto text-left">
+            <div className="pt-6 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-4xl mx-auto text-left">
               {[
-                { label: "Zero Table No-Shows", val: "₹500 Deposit Protection" },
-                { label: "Kitchen Order Speed", val: "4.2 Min Ticket Prep" },
-                { label: "Marketplace Sync", val: "Swiggy & Zomato Live" },
-                { label: "Multi-Tenant Cloud", val: "99.99% SLA Uptime" },
+                { label: "Zero Table No-Shows", val: "₹500 Deposit Protection", icon: ShieldCheck },
+                { label: "Kitchen Order Speed", val: "4.2 Min Ticket Prep", icon: Flame },
+                { label: "Marketplace Sync", val: "Swiggy & Zomato Live", icon: Zap },
+                { label: "Multi-Tenant Cloud", val: "99.99% SLA Uptime", icon: Cpu },
               ].map((stat, i) => (
-                <div key={i} className="bg-slate-900/60 backdrop-blur border border-slate-800 p-4 rounded-2xl">
-                  <div className="text-gold font-bold text-sm sm:text-base font-mono">{stat.val}</div>
-                  <div className="text-slate-400 text-xs mt-1">{stat.label}</div>
+                <div
+                  key={i}
+                  className="bg-slate-900/80 backdrop-blur-xl border border-gold/30 hover:border-gold/60 p-4 rounded-2xl shadow-xl transition-all hover:scale-105 group"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <stat.icon size={16} className="text-gold group-hover:scale-110 transition-transform" />
+                    <div className="text-gold font-bold text-sm sm:text-base font-mono">{stat.val}</div>
+                  </div>
+                  <div className="text-slate-400 text-xs pl-6">{stat.label}</div>
                 </div>
               ))}
             </div>
           </div>
+
+          {/* LIVE INTERACTIVE SYSTEM CONSOLE SANDBOX */}
+          <div className="pt-6">
+            <InteractiveSystemConsole />
+          </div>
+        </div>
+      </section>
+
+      {/* INTERACTIVE ROI SAVINGS CALCULATOR SECTION */}
+      <section className="py-16 bg-navy-950/60 border-y border-slate-800/60">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <InteractiveROICalculator />
         </div>
       </section>
 
       {/* QUICK EXPLORE CARDS (NAVIGATE TO MULTIPLE PAGES) */}
-      <section className="py-16 bg-navy-950/60 border-y border-slate-800/60">
+      <section className="py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center space-y-3 mb-12">
             <span className="text-gold font-mono text-xs uppercase tracking-widest font-semibold">Explore Platform Portals</span>
@@ -144,72 +167,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* CORE HIGHLIGHTS TEASER */}
-      <section className="py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-16">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-6">
-              <span className="text-gold font-mono text-xs uppercase tracking-widest font-semibold">Priority Reservations & Deposits</span>
-              <h2 className="font-serif text-3xl sm:text-4xl font-bold text-white leading-tight">
-                Eliminate Table No-Shows with Razorpay Deposit Protection
-              </h2>
-              <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-                Table reservations in fine dining often suffer 15% to 25% no-show rates. Lumière OS lets guests choose standard free booking or priority ₹500 refundable deposit booking. Deposits automatically process via Razorpay and credit seamlessly toward their final dining check.
-              </p>
-              <ul className="space-y-3 text-xs sm:text-sm text-slate-300">
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Configurable Deposit Rules (Optional or Mandatory for VIP peak slots)</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Instant Razorpay Payment Link generation with auto-invoicing</span>
-                </li>
-                <li className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Direct Guest SMS & WhatsApp booking vouchers</span>
-                </li>
-              </ul>
-              <div>
-                <Link href="/features" className="btn-gold text-xs px-5 py-3 rounded-xl inline-flex items-center gap-2">
-                  <span>See How Deposit Control Works</span>
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-slate-900 via-navy-950 to-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl relative">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-800 text-xs text-slate-400">
-                <span className="font-mono text-gold font-bold">LIVE RESERVATION ENGINE</span>
-                <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded font-mono">Synced</span>
-              </div>
-              <div className="py-6 space-y-4">
-                <div className="bg-slate-900/90 border border-gold/30 p-4 rounded-xl flex items-center justify-between">
-                  <div>
-                    <div className="text-white font-bold text-sm">Table #14 &middot; Royal Booth</div>
-                    <div className="text-slate-400 text-xs">Guest: Rajesh Sharma &middot; 4 Guests &middot; 8:30 PM</div>
-                  </div>
-                  <div className="text-right">
-                    <span className="bg-gold/20 text-gold text-xs font-mono font-bold px-2.5 py-1 rounded">₹500 Deposit Paid</span>
-                    <div className="text-[10px] text-emerald-400 mt-1">Razorpay Ref #pay_98231</div>
-                  </div>
-                </div>
-
-                <div className="bg-slate-900/70 border border-slate-800 p-4 rounded-xl flex items-center justify-between opacity-80">
-                  <div>
-                    <div className="text-white font-bold text-sm">Table #08 &middot; Garden Terrace</div>
-                    <div className="text-slate-400 text-xs">Guest: Ananya Roy &middot; 2 Guests &middot; 9:00 PM</div>
-                  </div>
-                  <span className="bg-slate-800 text-slate-400 text-xs font-mono px-2.5 py-1 rounded">Standard Booking</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* CTA BANNER */}
-      <section className="py-16">
+      <section className="py-16 bg-navy-950/80 border-t border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="bg-gradient-to-r from-wine/40 via-navy-950 to-wine/40 border border-gold/30 rounded-3xl p-10 text-center space-y-6 shadow-2xl relative overflow-hidden">
             <h2 className="font-serif text-3xl sm:text-4xl font-bold text-white">

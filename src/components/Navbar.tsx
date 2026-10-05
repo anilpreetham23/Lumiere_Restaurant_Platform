@@ -34,9 +34,9 @@ export default function Navbar() {
     <>
       <div className="hidden md:block bg-ink text-white/70 text-xs">
         <div className="mx-auto max-w-6xl px-5 py-2 flex justify-between items-center">
-          <span className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <Phone size={12} className="text-gold" /> +91 93465 43338 &middot; 12 MG Road, Indiranagar, Bengaluru
-          </span>
+          </div>
           <div className="flex items-center gap-4 text-gold text-[0.7rem] font-medium">
             <Link href="/order/track" className="hover:underline flex items-center gap-1">
               Live Order Tracker

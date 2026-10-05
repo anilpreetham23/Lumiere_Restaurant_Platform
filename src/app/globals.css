@@ -87,23 +87,43 @@ h1, h2, h3, h4, h5 { font-family: var(--font-serif); }
 /* ============================================================
    PRINT STYLES FOR RESERVATION VOUCHERS & RECEIPTS
    ============================================================ */
+@page {
+  size: portrait;
+  margin: 6mm;
+}
+
 @media print {
-  body {
+  html, body {
+    height: 100% !important;
+    overflow: hidden !important;
     background: #ffffff !important;
     color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
-  header, nav, footer, .print\:hidden, form {
+  *, *:before, *:after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  header, nav, footer, .print\:hidden, form, button, input {
     display: none !important;
   }
   .bg-cream {
     background: #ffffff !important;
     padding: 0 !important;
+    min-height: auto !important;
   }
   .print-voucher {
-    border: 2px solid #c8a24d !important;
+    border: 2px dashed #c8a24d !important;
     box-shadow: none !important;
     margin: 0 auto !important;
+    padding: 1rem 1.25rem !important;
     max-width: 100% !important;
+    max-height: 96vh !important;
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
   }
 }

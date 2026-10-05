@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import PageWrapper from "@/components/PageWrapper";
+import InteractivePricingCalculator from "@/components/InteractivePricingCalculator";
 import {
   Check,
   X,
@@ -16,7 +17,6 @@ import {
 export default function PricingPage() {
   const [billingCycle, setBillingCycle] = useState<"monthly" | "annual">("annual");
   const [openFaq, setOpenFaq] = useState<number | null>(0);
-  const [showMatrix, setShowMatrix] = useState(true);
 
   const PLANS = [
     {
@@ -157,34 +157,18 @@ export default function PricingPage() {
           <p className="text-slate-300 text-base max-w-2xl mx-auto font-light">
             14-day free trial on all plans. Zero hidden setup fees. Upgrade or downgrade anytime.
           </p>
+        </div>
+      </section>
 
-          {/* BILLING TOGGLE */}
-          <div className="pt-6 flex items-center justify-center gap-4">
-            <span className={`text-xs font-medium ${billingCycle === "monthly" ? "text-white" : "text-slate-400"}`}>
-              Monthly Billing
-            </span>
-            <button
-              onClick={() => setBillingCycle(billingCycle === "monthly" ? "annual" : "monthly")}
-              className="w-14 h-8 rounded-full bg-slate-800 p-1 border border-slate-700 relative transition-colors focus:outline-none cursor-pointer"
-            >
-              <div
-                className={`w-6 h-6 rounded-full bg-gold transition-transform ${
-                  billingCycle === "annual" ? "translate-x-6" : "translate-x-0"
-                }`}
-              />
-            </button>
-            <span className={`text-xs font-medium flex items-center gap-1.5 ${billingCycle === "annual" ? "text-gold font-bold" : "text-slate-400"}`}>
-              Annual Billing
-              <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded font-mono uppercase">
-                Save 20%
-              </span>
-            </span>
-          </div>
+      {/* DYNAMIC PLAN CONFIGURATOR WIDGET */}
+      <section className="py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <InteractivePricingCalculator />
         </div>
       </section>
 
       {/* PRICING CARDS */}
-      <section className="py-16">
+      <section className="py-12 bg-navy-950/60 border-t border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
           {PLANS.map((plan, i) => (
             <div

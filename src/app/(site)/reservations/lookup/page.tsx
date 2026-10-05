@@ -14,7 +14,7 @@ import {
   Download,
   Sparkles,
   Phone,
-  CheckCircle2,
+  QrCode,
 } from "lucide-react";
 
 export default function ReservationLookupPage() {
@@ -50,73 +50,183 @@ export default function ReservationLookupPage() {
 
   const handleDownloadPNG = () => {
     try {
+      // 2x Retina Scale canvas for crisp text
+      const scale = 2;
+      const width = 800;
+      const height = 520;
+
       const canvas = document.createElement("canvas");
-      canvas.width = 800;
-      canvas.height = 480;
+      canvas.width = width * scale;
+      canvas.height = height * scale;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      // Background Card
+      ctx.scale(scale, scale);
+
+      // Background Base Card
       ctx.fillStyle = "#faf6ef";
-      ctx.fillRect(0, 0, 800, 480);
+      ctx.fillRect(0, 0, width, height);
 
-      // Gold Outer Border
+      // Outer Gold Double Border Frame
       ctx.strokeStyle = "#c8a24d";
-      ctx.lineWidth = 6;
-      ctx.strokeRect(16, 16, 768, 448);
+      ctx.lineWidth = 3;
+      ctx.strokeRect(12, 12, width - 24, height - 24);
 
-      // Top Banner Fill
-      ctx.fillStyle = "#7a2e35";
-      ctx.fillRect(16, 16, 768, 80);
+      ctx.strokeStyle = "#e0c079";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(18, 18, width - 36, height - 36);
 
-      // Header Text
+      // Top Luxury Wine Header Bar
+      const headerGradient = ctx.createLinearGradient(0, 0, width, 0);
+      headerGradient.addColorStop(0, "#5c1f26");
+      headerGradient.addColorStop(0.5, "#7a2e35");
+      headerGradient.addColorStop(1, "#5c1f26");
+      ctx.fillStyle = headerGradient;
+      ctx.fillRect(20, 20, width - 40, 90);
+
+      // Header Brand Text
       ctx.fillStyle = "#ffffff";
       ctx.font = "bold 26px Georgia, serif";
       ctx.fillText("Lumière Fine Dining", 40, 60);
 
       ctx.fillStyle = "#e0c079";
-      ctx.font = "bold 13px sans-serif";
-      ctx.fillText(`RESERVATION CONFIRMATION #${reservation.id}`, 500, 60);
+      ctx.font = "12px sans-serif";
+      ctx.fillText("12 MG Road, Indiranagar, Bengaluru · +91 93465 43338", 40, 84);
 
-      // Deposit Badge Box
+      // Booking ID Pill on Right
+      ctx.fillStyle = "rgba(200, 162, 77, 0.25)";
+      ctx.strokeStyle = "#c8a24d";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(width - 240, 42, 200, 42, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 11px monospace";
+      ctx.fillText("VIP PASS CONFIRMATION", width - 225, 58);
+      ctx.fillStyle = "#e0c079";
+      ctx.font = "bold 14px monospace";
+      ctx.fillText(`#${reservation.id}`, width - 225, 76);
+
+      // Deposit Verification Banner
       ctx.fillStyle = "#ecfdf5";
       ctx.strokeStyle = "#059669";
       ctx.lineWidth = 1.5;
-      ctx.fillRect(40, 120, 720, 60);
-      ctx.strokeRect(40, 120, 720, 60);
+      ctx.beginPath();
+      ctx.roundRect(40, 130, width - 80, 55, 10);
+      ctx.fill();
+      ctx.stroke();
 
       ctx.fillStyle = "#047857";
-      ctx.font = "bold 16px sans-serif";
-      ctx.fillText(`✓ DEPOSIT PROTECTED: ₹${reservation.depositPaid} CREDITED`, 60, 155);
+      ctx.font = "bold 15px sans-serif";
+      ctx.fillText(`✓ DEPOSIT GUARANTEED: ₹${reservation.depositPaid} CREDITED TO DINING CHECK`, 60, 163);
+
+      ctx.fillStyle = "#4b5563";
+      ctx.font = "11px monospace";
+      ctx.fillText(`Razorpay Ref: ${reservation.razorpayPaymentId}`, width - 280, 163);
+
+      // 4-Box Matrix (Date, Time, Guests, Seating)
+      const boxes = [
+        { label: "DATE", val: reservation.date, x: 40 },
+        { label: "TIME", val: reservation.time, x: 220 },
+        { label: "GUESTS", val: `${reservation.guests} Guests`, x: 400 },
+        { label: "SEATING", val: reservation.tableCategory, x: 580 },
+      ];
+
+      boxes.forEach((box) => {
+        ctx.fillStyle = "#ffffff";
+        ctx.strokeStyle = "#e3dccf";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(box.x, 200, 165, 65, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = "#c8a24d";
+        ctx.font = "bold 10px monospace";
+        ctx.fillText(box.label, box.x + 14, 222);
+
+        ctx.fillStyle = "#16130f";
+        ctx.font = "bold 12px sans-serif";
+        // Simple wrap for long text
+        const displayVal = box.val.length > 20 ? box.val.substring(0, 18) + "..." : box.val;
+        ctx.fillText(displayVal, box.x + 14, 245);
+      });
+
+      // Guest Details & Special Requests Panel
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#e3dccf";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(40, 280, 520, 130, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#7a2e35";
+      ctx.font = "bold 13px Georgia, serif";
+      ctx.fillText("GUEST & RESERVATION DETAILS", 56, 306);
 
       ctx.fillStyle = "#374151";
-      ctx.font = "12px monospace";
-      ctx.fillText(`Razorpay Ref: ${reservation.razorpayPaymentId}`, 480, 155);
-
-      // Details Grid
-      ctx.fillStyle = "#16130f";
-      ctx.font = "14px sans-serif";
-      ctx.fillText(`Guest Name: ${reservation.guestName}`, 60, 220);
-      ctx.fillText(`Phone: ${reservation.phone}`, 60, 250);
-      ctx.fillText(`Date: ${reservation.date}`, 60, 280);
-      ctx.fillText(`Time: ${reservation.time}`, 60, 310);
-
-      ctx.fillText(`Party Size: ${reservation.guests} Guests`, 440, 220);
-      ctx.fillText(`Seating: ${reservation.tableCategory}`, 440, 250);
-      ctx.fillText(`Venue: 12 MG Road, Indiranagar, Bengaluru`, 440, 280);
-      ctx.fillText(`Status: CONFIRMED VIP PASS`, 440, 310);
-
-      // Footer Bar
-      ctx.fillStyle = "#16130f";
-      ctx.fillRect(16, 400, 768, 64);
-      ctx.fillStyle = "#e0c079";
       ctx.font = "12px sans-serif";
-      ctx.fillText("Present this digital voucher on arrival. 100% of deposit credited to final dining check.", 40, 438);
+      ctx.fillText(`Guest Name: ${reservation.guestName}`, 56, 332);
+      ctx.fillText(`Phone: ${reservation.phone}`, 56, 354);
+      ctx.fillText(`Email: ${reservation.email}`, 56, 376);
 
-      // Trigger File Download
+      ctx.fillStyle = "#6b7280";
+      ctx.font = "italic 11px sans-serif";
+      const reqText = reservation.specialRequest ? `Note: "${reservation.specialRequest}"` : "Note: Standard VIP Table Arrangement";
+      ctx.fillText(reqText.length > 70 ? reqText.substring(0, 67) + "..." : reqText, 56, 396);
+
+      // Simulated QR Code Scanner Box on Right
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#c8a24d";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(580, 280, 180, 130, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // QR Code grid simulation
+      ctx.fillStyle = "#16130f";
+      ctx.fillRect(610, 295, 120, 80);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(620, 305, 30, 30);
+      ctx.fillRect(680, 305, 30, 30);
+      ctx.fillRect(620, 335, 30, 30);
+      ctx.fillStyle = "#16130f";
+      ctx.fillRect(628, 313, 14, 14);
+      ctx.fillRect(688, 313, 14, 14);
+      ctx.fillRect(628, 343, 14, 14);
+      ctx.fillRect(660, 345, 20, 20);
+
+      ctx.fillStyle = "#c8a24d";
+      ctx.font = "bold 9px monospace";
+      ctx.fillText("SCAN AT HOST DESK", 615, 395);
+
+      // Bottom Dark Footer Bar
+      ctx.fillStyle = "#16130f";
+      ctx.fillRect(20, 430, width - 40, 70);
+
+      ctx.fillStyle = "#e0c079";
+      ctx.font = "11px sans-serif";
+      ctx.fillText(
+        "Please present this digital voucher upon arrival at Lumière Indiranagar.",
+        40,
+        458
+      );
+      ctx.fillStyle = "#9ca3af";
+      ctx.font = "10px monospace";
+      ctx.fillText(
+        "Deposit non-refundable for cancellations under 4 hrs · Valid for reservation date only.",
+        40,
+        478
+      );
+
+      // Trigger crisp PNG File Download
       const link = document.createElement("a");
-      link.download = `Lumiere_Pass_${reservation.id}.png`;
-      link.href = canvas.toDataURL("image/png");
+      link.download = `Lumiere_Reservation_Voucher_${reservation.id}.png`;
+      link.href = canvas.toDataURL("image/png", 1.0);
       link.click();
     } catch (err) {
       console.error("Voucher download error", err);
@@ -161,7 +271,7 @@ export default function ReservationLookupPage() {
         {reservation && (
           <div
             id="reservation-pass-voucher"
-            className="print-voucher bg-white border-2 border-gold/40 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8 relative overflow-hidden"
+            className="print-voucher bg-white border-2 border-gold/40 rounded-3xl p-6 sm:p-10 shadow-2xl space-y-8 print:space-y-4 print:p-6 print:m-0 relative overflow-hidden"
           >
             {/* VOUCHER HEADER */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-cream2 pb-6">
@@ -193,7 +303,7 @@ export default function ReservationLookupPage() {
             </div>
 
             {/* RESERVATION DETAILS GRID */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 py-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 py-2">
               <div className="bg-cream/60 p-4 rounded-2xl border border-cream2">
                 <div className="flex items-center gap-2 text-gold mb-1">
                   <Calendar size={18} />
@@ -228,31 +338,33 @@ export default function ReservationLookupPage() {
             </div>
 
             {/* GUEST & VENUE INFO */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-cream/30 p-6 rounded-2xl border border-cream2 text-xs">
-              <div className="space-y-2">
-                <div className="font-bold text-ink text-sm">Guest Information</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 bg-cream/30 p-6 rounded-2xl border border-cream2 text-xs">
+              <div className="space-y-2 sm:col-span-2">
+                <div className="font-bold text-ink text-sm">Guest & Booking Details</div>
                 <div className="text-neutral-700"><strong>Name:</strong> {reservation.guestName}</div>
                 <div className="text-neutral-700"><strong>Phone:</strong> {reservation.phone}</div>
                 <div className="text-neutral-700"><strong>Email:</strong> {reservation.email}</div>
+                <div className="flex items-start gap-2 text-neutral-700 pt-1">
+                  <MapPin size={14} className="text-gold shrink-0 mt-0.5" />
+                  <span>12 MG Road, Indiranagar, Bengaluru, KA 560038 (+91 93465 43338)</span>
+                </div>
                 {reservation.specialRequest && (
                   <div className="text-neutral-600 pt-1 italic">
                     &ldquo;{reservation.specialRequest}&rdquo;
                   </div>
                 )}
+                <div className="text-[11px] text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg font-mono border border-emerald-200 mt-2">
+                  100% of ₹500 deposit will be deducted from your final dining check.
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="font-bold text-ink text-sm">Dining Location</div>
-                <div className="flex items-start gap-2 text-neutral-700">
-                  <MapPin size={16} className="text-gold shrink-0 mt-0.5" />
-                  <span>12 MG Road, Indiranagar, Bengaluru, KA 560038</span>
+              {/* QR CODE SCANNER PANEL */}
+              <div className="flex flex-col items-center justify-center border-t sm:border-t-0 sm:border-l border-cream2 pt-4 sm:pt-0 sm:pl-6 text-center space-y-2">
+                <div className="p-3 bg-white border border-gold/40 rounded-xl shadow-sm">
+                  <QrCode size={72} className="text-ink" />
                 </div>
-                <div className="flex items-center gap-2 text-neutral-700">
-                  <Phone size={16} className="text-gold shrink-0" />
-                  <span>+91 93465 43338</span>
-                </div>
-                <div className="text-[11px] text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg font-mono border border-emerald-200 mt-2">
-                  100% of ₹500 deposit will be deducted from your final dining bill.
+                <div className="text-[10px] font-mono text-neutral-500 font-bold tracking-wider uppercase">
+                  Scan at Desk
                 </div>
               </div>
             </div>
