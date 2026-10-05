@@ -26,25 +26,23 @@ export default function Footer() {
 
           {/* Product Links */}
           <div className="space-y-3">
-            <div className="font-bold text-white uppercase tracking-wider text-[11px]">Platform Pages</div>
+            <div className="font-bold text-white uppercase tracking-wider text-[11px]">Platform Portals</div>
             <ul className="space-y-2 text-slate-300">
               <li><Link href="/" className="hover:text-gold transition">Home Overview</Link></li>
               <li><Link href="/features" className="hover:text-gold transition">All Features & KDS Specs</Link></li>
               <li><Link href="/solutions" className="hover:text-gold transition">Restaurant Segment Solutions</Link></li>
               <li><Link href="/pricing" className="hover:text-gold transition">Pricing & Subscription Plans</Link></li>
-              <li><Link href="/calculator" className="hover:text-gold transition">Interactive ROI Calculator</Link></li>
               <li><Link href="/contact" className="hover:text-gold transition">Sales & Contact</Link></li>
             </ul>
           </div>
 
-          {/* SaaS Pricing & Solutions */}
+          {/* SaaS Pricing & Quick Access */}
           <div className="space-y-3">
-            <div className="font-bold text-white uppercase tracking-wider text-[11px]">Quick Access</div>
+            <div className="font-bold text-white uppercase tracking-wider text-[11px]">Subscription Plans</div>
             <ul className="space-y-2 text-slate-300">
               <li><Link href="/pricing" className="hover:text-gold transition">Starter Outlet Plan (₹4,999)</Link></li>
               <li><Link href="/pricing" className="hover:text-gold transition">Growth Fine Dining (₹9,999)</Link></li>
               <li><Link href="/pricing" className="hover:text-gold transition">Enterprise Franchise Plan</Link></li>
-              <li><Link href="/calculator" className="hover:text-gold transition">Calculate Revenue Boost</Link></li>
               <li><a href="http://localhost:3000/admin" target="_blank" rel="noreferrer" className="hover:text-gold transition text-gold flex items-center gap-1">Live Admin Workspace &rarr;</a></li>
             </ul>
           </div>

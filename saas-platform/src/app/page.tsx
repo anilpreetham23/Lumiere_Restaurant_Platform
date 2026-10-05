@@ -1,25 +1,19 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import Link from "next/link";
 import PageWrapper from "@/components/PageWrapper";
 import {
   Sparkles,
   ArrowRight,
   ShieldCheck,
-  Utensils,
   Layers,
   ShoppingBag,
   Store,
-  BookOpen,
   DollarSign,
-  TrendingUp,
   CheckCircle2,
   ExternalLink,
   ChevronRight,
-  Smartphone,
-  Flame,
-  Award,
 } from "lucide-react";
 
 export default function HomePage() {
@@ -102,7 +96,7 @@ export default function HomePage() {
             <h2 className="font-serif text-3xl font-bold text-white">Dedicated Platform Solutions & Tools</h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {[
               {
                 title: "Module Features",
@@ -124,13 +118,6 @@ export default function HomePage() {
                 link: "/pricing",
                 icon: DollarSign,
                 btnText: "Compare Plans",
-              },
-              {
-                title: "ROI Calculator",
-                desc: "Calculate exact labor hours saved and monthly revenue recovered from eliminated no-shows.",
-                link: "/calculator",
-                icon: TrendingUp,
-                btnText: "Calculate ROI",
               },
             ].map((card, i) => (
               <div
@@ -176,7 +163,7 @@ export default function HomePage() {
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Instant Razorpay Payment Link generation with auto-refund policies</span>
+                  <span>Instant Razorpay Payment Link generation with auto-invoicing</span>
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />

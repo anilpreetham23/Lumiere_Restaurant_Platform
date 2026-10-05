@@ -13,8 +13,7 @@ const NAV_LINKS = [
   { href: "/", label: "Home" },
   { href: "/features", label: "Features" },
   { href: "/solutions", label: "Solutions" },
-  { href: "/pricing", label: "Pricing & Plans" },
-  { href: "/calculator", label: "ROI Calculator" },
+  { href: "/pricing", label: "Pricing Plans" },
   { href: "/contact", label: "Contact & Sales" },
 ];
 
