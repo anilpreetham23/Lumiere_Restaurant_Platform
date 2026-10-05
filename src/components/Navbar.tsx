@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/menu", label: "Menu" },
   { href: "/about", label: "About" },
   { href: "/order", label: "Order" },
+  { href: "/platform", label: "SaaS OS & Pricing" },
   { href: "/blog", label: "Journal" },
   { href: "/contact", label: "Contact" },
 ];
